@@ -15,7 +15,7 @@ export function MyVideos() {
     const movies = (await db.movies.bulkGet(favs.filter((f) => f.kind === 'movie').map((f) => f.itemId))).filter(Boolean) as Movie[];
     const series = (await db.series.bulkGet(favs.filter((f) => f.kind === 'series').map((f) => f.itemId))).filter(Boolean) as Series[];
     return { cont, movies, series, hist: hist.filter((h) => h.kind !== 'live' && h.completed) };
-  }, [profile.id]);
+  }, [profile.id], { key: `myvideos:${profile.id}` });
   if (!data) return null;
   const empty = !data.cont.length && !data.movies.length && !data.series.length && !data.hist.length;
   return (

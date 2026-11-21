@@ -1,20 +1,51 @@
 import { useEffect, useRef, useState, type DependencyList } from 'react';
 import { useApp } from '@/state/store';
 
-/** Async query re-run on deps change and whenever the catalog version bumps */
-export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList, opts: { epg?: boolean } = {}): T | undefined {
+/**
+ * Last result of each keyed query, kept across tab switches (screens remount on every switch):
+ * a revisited screen renders its previous content at once while the query refreshes it.
+ */
+const MEM = new Map<string, unknown>();
+const MEM_MAX = 60;
+
+export function primeCache(key: string, value: unknown) {
+  MEM.delete(key);
+  MEM.set(key, value);
+  if (MEM.size > MEM_MAX) MEM.delete(MEM.keys().next().value!);
+}
+export function cached<T>(key: string): T | undefined {
+  return MEM.get(key) as T | undefined;
+}
+
+/**
+ * Async query re-run on deps change and whenever the catalog version bumps.
+ * With `key`, the previous result is shown immediately (stale-while-revalidate).
+ */
+export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList, opts: { epg?: boolean; key?: string } = {}): T | undefined {
   const catalogVersion = useApp((s) => s.catalogVersion);
   const epgVersion = useApp((s) => (opts.epg ? s.epgVersion : 0));
-  const [v, setV] = useState<T>();
+  const [v, setV] = useState<T | undefined>(() => (opts.key ? cached<T>(opts.key) : undefined));
   const seq = useRef(0);
+  const lastKey = useRef(opts.key);
+  if (opts.key !== lastKey.current) {
+    // another query (e.g. other filter): show its cached result, never the previous query's
+    lastKey.current = opts.key;
+    const c = opts.key ? cached<T>(opts.key) : undefined;
+    if (c !== v) setV(c);
+  }
   useEffect(() => {
     const id = ++seq.current;
+    const key = opts.key;
     fn().then(
-      (r) => id === seq.current && setV(r),
+      (r) => {
+        if (id !== seq.current) return;
+        if (key) primeCache(key, r);
+        setV(r);
+      },
       (e) => console.warn('[query]', e),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, catalogVersion, epgVersion]);
+  }, [...deps, opts.key, catalogVersion, epgVersion]);
   return v;
 }
 

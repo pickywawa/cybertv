@@ -27,6 +27,8 @@ export interface Profile {
   subLangs?: string[];
   /** when to show subtitles: never, only when the audio isn't a preferred language, always */
   subMode?: 'off' | 'auto' | 'always';
+  /** fetch subtitles from OpenSubtitles when the stream has none in a preferred language (default on) */
+  subsOnline?: boolean;
   createdAt: number;
   lastSyncAt?: number;
 }

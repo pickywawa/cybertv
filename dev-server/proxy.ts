@@ -19,6 +19,10 @@ export function devProxyPlugin(): Plugin {
       server.middlewares.use('/proxy', (req, res) => {
         void handle(req, res);
       });
+      // API relay with method/headers/body (OpenSubtitles blocks browser CORS)
+      server.middlewares.use('/xhr', (req, res) => {
+        void relay(req, res);
+      });
     },
   };
 }
@@ -66,5 +70,34 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (ac.signal.aborted) return;
     res.statusCode = 502;
     res.end(`proxy error: ${(e as Error).message}`);
+  }
+}
+
+const RELAY_HEADERS = ['api-key', 'authorization', 'content-type', 'accept'];
+
+async function relay(req: IncomingMessage, res: ServerResponse) {
+  const target = new URL(req.url || '', 'http://x').searchParams.get('u');
+  if (!target || !/^https:\/\/([a-z0-9-]+\.)*opensubtitles\.(com|org)\//i.test(target)) {
+    res.statusCode = 400;
+    return res.end('host not allowed');
+  }
+  const headers: Record<string, string> = { 'user-agent': String(req.headers['x-ua'] || 'CyberIPTV dev') };
+  for (const h of RELAY_HEADERS) if (req.headers[h]) headers[h] = String(req.headers[h]);
+  let body: string | undefined;
+  if (req.method === 'POST') {
+    body = await new Promise<string>((ok) => {
+      let b = '';
+      req.on('data', (c) => (b += c));
+      req.on('end', () => ok(b));
+    });
+  }
+  try {
+    const up = await fetch(target, { method: req.method, headers, body, redirect: 'follow' });
+    res.statusCode = up.status;
+    res.setHeader('content-type', up.headers.get('content-type') || 'text/plain');
+    res.end(Buffer.from(await up.arrayBuffer()));
+  } catch (e) {
+    res.statusCode = 502;
+    res.end(`relay error: ${(e as Error).message}`);
   }
 }

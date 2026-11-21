@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 import { devProxyPlugin } from './dev-server/proxy.ts';
 import { mockXtreamPlugin } from './dev-server/mock-xtream.ts';
+import { enrollDevPlugin } from './dev-server/enroll.ts';
 import { readFileSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -15,7 +16,7 @@ export default defineConfig(({ command }) => ({
     __UPDATE_URL__: JSON.stringify(process.env.CYBER_UPDATE_URL ?? pkg.cyber?.updateUrl ?? ''),
     ...(command === 'build' ? { 'import.meta.env.VITE_DEV_TMDB_TOKEN': JSON.stringify('') } : {}),
   },
-  plugins: [react(), devProxyPlugin(), mockXtreamPlugin()],
+  plugins: [react(), devProxyPlugin(), mockXtreamPlugin(), enrollDevPlugin()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   worker: { format: 'es' },
   build: { target: 'es2020', sourcemap: false, chunkSizeWarningLimit: 900 },

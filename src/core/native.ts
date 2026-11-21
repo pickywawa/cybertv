@@ -48,6 +48,12 @@ export interface CyberNativePlugin {
   playerSetResize(o: { mode: 'fit' | 'fill' | 'zoom' }): Promise<void>;
   playerSetRate(o: { rate: number }): Promise<void>;
   playerPip(): Promise<void>;
+  prefetchSchedule(o: { plan: string; intervalH: number; wifiOnly: boolean; runNow?: boolean }): Promise<void>;
+  prefetchCancel(): Promise<void>;
+  prefetchStatus(): Promise<{ lastRunAt: number; lastOkAt: number; files: number; bytes: number; errors: number; scheduled: boolean }>;
+  enrollStart(): Promise<{ url: string }>;
+  enrollPoll(): Promise<{ payload?: string }>;
+  enrollStop(): Promise<void>;
   updateInfo(): Promise<{ versionCode: number; versionName: string; webVersion?: string; canInstall: boolean }>;
   updateBootOk(): Promise<void>;
   updateWeb(o: { url: string; version: string; sha256?: string; apply?: boolean }): Promise<void>;
@@ -56,6 +62,7 @@ export interface CyberNativePlugin {
   updateInstallApk(): Promise<{ needsPermission: boolean }>;
   addListener(event: 'playerState', cb: (s: NativePlayerState) => void): Promise<PluginListenerHandle>;
   addListener(event: 'playerTracks', cb: (t: { tracks: NativeTrack[] }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'enrollReceived', cb: (t: { payload: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'pipChanged', cb: (t: { active: boolean }) => void): Promise<PluginListenerHandle>;
 }
 

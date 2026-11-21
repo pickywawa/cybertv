@@ -13,7 +13,9 @@ export type Route =
   | { name: 'settings-section'; section: SettingsSection }
   | { name: 'source-edit'; sourceId?: string }
   | { name: 'profiles' }
-  | { name: 'profile-edit'; profileId?: string };
+  | { name: 'profile-edit'; profileId?: string }
+  | { name: 'enroll' }
+  | { name: 'send-to-tv'; target?: string };
 
 export type SettingsSection = 'sources' | 'services' | 'appearance' | 'player' | 'parental' | 'sync' | 'categories' | 'about';
 
@@ -33,6 +35,9 @@ export interface GlobalSettings {
   syncIntervalH: number;
   tonightStartMin: number;
   autoTrailer: boolean;
+  /** Android: pre-download catalogues and guides in the background (WorkManager) */
+  prefetch: boolean;
+  prefetchWifiOnly: boolean;
   hideAdult: boolean;
   recentSearches: string[];
 }
@@ -44,6 +49,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   syncIntervalH: 12,
   tonightStartMin: 20 * 60 + 50,
   autoTrailer: true,
+  prefetch: true,
+  prefetchWifiOnly: true,
   hideAdult: true,
   recentSearches: [],
 };
@@ -58,6 +65,8 @@ function loadSettings(): GlobalSettings {
 
 export interface SyncState {
   running: boolean;
+  /** local sync from pre-downloaded files: no progress pill */
+  quiet?: boolean;
   progress?: SyncProgress;
   lastError?: string;
 }

@@ -37,3 +37,7 @@ export async function secureRemove(key: string): Promise<void> {
 
 export const sourcePassKey = (sourceId: string) => `src:${sourceId}:pass`;
 export const tmdbKey = (profileId: string) => `tmdb:${profileId}`;
+/** OpenSubtitles: API key + optional account (raises the daily download quota) */
+export const osKey = (profileId: string) => `os:${profileId}:key`;
+export const osUserKey = (profileId: string) => `os:${profileId}:user`;
+export const osPassKey = (profileId: string) => `os:${profileId}:pass`;

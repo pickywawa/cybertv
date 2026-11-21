@@ -88,7 +88,7 @@ export function Shell() {
       {mobile && <BottomNav tab={tab} setTab={setTab} />}
       <PinGate />
       <UpdateBanner />
-      {sync.running && (
+      {sync.running && !sync.quiet && (
         <div className="sync-pill">
           <span className="spinner" />
           {sync.progress?.step && sync.progress.step !== 'start' && sync.progress.step !== 'done' && sync.progress.step !== 'error'

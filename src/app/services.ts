@@ -11,7 +11,9 @@ import { setLang } from '@/core/i18n';
 import { applyTheme, useApp } from '@/state/store';
 import { installSpatialNav, setBackHandler, setSmoothScroll } from '@/ui/spatial';
 import type { Profile, SyncProgress } from '@/core/types';
+import { primeCache } from '@/ui/hooks';
 import { checkForUpdate, reportBootOk } from '@/core/updater';
+import { enrollTarget } from '@/core/enroll';
 
 let periodic: number | null = null;
 let lastEnrichBump = 0;
@@ -36,6 +38,9 @@ export async function boot() {
         void runUpdateCheck();
       }
     });
+    // QR enrolment: the TV's page opened cyberiptv://enroll?target=… on this phone
+    CapApp.addListener('appUrlOpen', ({ url }) => openDeepLink(url));
+    void CapApp.getLaunchUrl().then((r) => r?.url && openDeepLink(r.url)).catch(() => {});
     // this web bundle started: keep it; then look for a newer one in the background
     reportBootOk();
     setTimeout(() => void runUpdateCheck(), 8000);
@@ -80,12 +85,34 @@ export function handleBack(hardware: boolean): boolean {
   return ok;
 }
 
+let pendingLink: string | null = null;
+
+/** routes a deep link once a profile is active (the profile's sources are what gets sent) */
+export function openDeepLink(url: string) {
+  const target = enrollTarget(url);
+  if (!target) return;
+  const st = useApp.getState();
+  if (st.screen !== 'app' || !st.profile) {
+    pendingLink = url;
+    return;
+  }
+  st.setTab('home');
+  st.push({ name: 'send-to-tv', target });
+}
+
 export async function selectProfile(p: Profile) {
   const s = useApp.getState();
   setLang(p.lang);
   applyTheme(p.theme, p.accent, s.settings.performance);
   s.setProfile(p);
+  // last Home content from the previous session: shown at once, refreshed right after
+  await loadHomeSnapshot(p.id);
   useApp.setState({ screen: 'app', booted: true });
+  if (pendingLink) {
+    const link = pendingLink;
+    pendingLink = null;
+    openDeepLink(link);
+  }
   await loadSecrets(p.id, true);
   void startEnrichment(p);
   void searchWorker().warm(p.id, (await getMeta<number>(`catalog:version:${p.id}`)) || 0);
@@ -96,6 +123,7 @@ export async function selectProfile(p: Profile) {
     if (!p.lastSyncAt) void setMeta(LANG_SCHEMA, true);
     void maybeSync();
   }
+  void schedulePrefetch(p.id);
   if (periodic) clearInterval(periodic);
   periodic = window.setInterval(() => void maybeSync(), 20 * 60000);
 }
@@ -125,13 +153,40 @@ export async function maybeSync(force = false) {
   const p = s.profile;
   if (!p || s.sync.running) return;
   const stale = !p.lastSyncAt || Date.now() - p.lastSyncAt > s.settings.syncIntervalH * 3600000;
-  if (force || stale) await runSync(p.id);
+  // catalogues/guides pre-downloaded in the background since the last sync: apply them now,
+  // it's local work only (no network wait), so no progress pill either
+  const pre = isNative && s.settings.prefetch ? await CyberNative.prefetchStatus().catch(() => null) : null;
+  const fresh = !!pre && !!p.lastSyncAt && pre.lastOkAt > p.lastSyncAt;
+  if (force || stale || fresh) await runSync(p.id, true, { quiet: fresh && !force });
 }
 
-export async function runSync(profileId: string, withEpg = true) {
+/** hands the URLs of a full sync to Android's WorkManager (runs while the app is closed) */
+export async function schedulePrefetch(profileId: string, runNow = false) {
+  if (!isNative) return;
+  const st = useApp.getState().settings;
+  if (!st.prefetch) {
+    await CyberNative.prefetchCancel().catch(() => {});
+    return;
+  }
+  try {
+    const secrets = await loadSecrets(profileId);
+    const urls = await dataWorker().prefetchPlan(profileId, secrets);
+    if (!urls.length) return;
+    await CyberNative.prefetchSchedule({
+      plan: JSON.stringify({ profileId, items: urls.map((url) => ({ url })) }),
+      intervalH: Math.max(3, Math.round(st.syncIntervalH / 2)),
+      wifiOnly: st.prefetchWifiOnly,
+      runNow,
+    });
+  } catch (e) {
+    console.warn('[prefetch]', e);
+  }
+}
+
+export async function runSync(profileId: string, withEpg = true, opts: { quiet?: boolean } = {}) {
   const s = useApp.getState();
   if (s.sync.running) return;
-  s.setSync({ running: true, progress: { step: 'start' }, lastError: undefined });
+  s.setSync({ running: true, quiet: !!opts.quiet, progress: { step: 'start' }, lastError: undefined });
   const secrets = await loadSecrets(profileId, true);
   let lastBump = 0;
   try {
@@ -159,11 +214,13 @@ export async function runSync(profileId: string, withEpg = true) {
       void startEnrichment(prof);
     }
     void searchWorker().warm(profileId, (await getMeta<number>(`catalog:version:${profileId}`)) || Date.now());
+    // keep the background pre-download in step with the sources / servers in use
+    void schedulePrefetch(profileId);
   } catch (e) {
     useApp.getState().setSync({ lastError: (e as Error).message });
   } finally {
     const st = useApp.getState();
-    st.setSync({ running: false });
+    st.setSync({ running: false, quiet: false });
     st.bumpCatalog();
     st.bumpEpg();
   }
@@ -178,4 +235,13 @@ export async function runUpdateCheck(force = false): Promise<void> {
   // a ready web bundle stays announced until restart even if a later check finds nothing new
   if (r.kind === 'none' && cur.kind !== 'none') return;
   useApp.setState({ update: r, updateDismissed: false });
+}
+
+async function loadHomeSnapshot(profileId: string) {
+  try {
+    const snap = await getMeta<{ key: string; data: unknown; at: number }>(`snapshot:home:${profileId}`);
+    if (snap?.key && snap.data) primeCache(snap.key, snap.data);
+  } catch {
+    /* no snapshot: Home loads normally */
+  }
 }

@@ -2,7 +2,7 @@ import { db, getMeta, setMeta } from '../db';
 import type { Category, Channel, Episode, Movie, Program, Series, Source, SyncProgress, Universe } from '../types';
 import { XtreamClient, asArray, num, normalizeServer } from '../sources/xtream';
 import { M3uParser, classifyEntry, type M3uEntry } from '../sources/m3u';
-import { fetchTextStream, lines } from '../net/http';
+import { fetchTextStream, lines, setPrefetchSince } from '../net/http';
 import {
   channelGroupKey, cleanName, detectQuality, detectUniverse, movieGroupKey, norm, parseEpisode, parseTitleYear, seriesGroupKey,
 } from '../util/text';
@@ -368,7 +368,20 @@ export async function syncEpg(profileId: string, secrets: Record<string, string 
   const from = Date.now() - Math.min(maxCatchup, 7) * 86400000 - 3600000;
   const to = Date.now() + 3 * 86400000;
   const covered = new Set<string>();
+  setPrefetchSince((await getMeta<number>(`epg:last:${profileId}`)) || 0);
+  try {
+    await syncEpgUrls(urls, byEpg, byBase, byName, covered, from, to, progress);
+  } finally {
+    setPrefetchSince(null);
+  }
+  await db.programs.where('start').below(Date.now() - 8 * 86400000).delete();
+  await setMeta(`epg:last:${profileId}`, Date.now());
+}
 
+async function syncEpgUrls(
+  urls: string[], byEpg: Set<string>, byBase: Map<string, Channel[]>, byName: Map<string, Channel[]>, covered: Set<string>,
+  from: number, to: number, progress: Progress,
+) {
   for (const url of urls) {
     progress({ step: 'epg', message: url.replace(/(password|username)=[^&]+/g, '$1=***') });
     try {
@@ -427,8 +440,18 @@ export async function syncEpg(profileId: string, secrets: Record<string, string 
       progress({ step: 'epg', message: `EPG ignoré : ${(e as Error).message}` });
     }
   }
-  await db.programs.where('start').below(Date.now() - 8 * 86400000).delete();
-  await setMeta(`epg:last:${profileId}`, Date.now());
+}
+
+/** URLs read by a full sync of the profile (catalogues + guides), for the background pre-download */
+export async function prefetchPlan(profileId: string, secrets: Record<string, string | undefined>): Promise<string[]> {
+  const sources = (await db.sources.where('profileId').equals(profileId).toArray()).filter((s) => s.enabled);
+  const urls: string[] = [];
+  for (const s of sources) {
+    if (s.type === 'xtream') urls.push(...new XtreamClient({ server: s.url, username: s.username!, password: secrets[s.id] || '' }).syncUrls());
+    else urls.push(s.url);
+  }
+  urls.push(...(await epgUrlsForProfile(profileId, secrets)));
+  return [...new Set(urls)];
 }
 
 // ───────────────────────────── Orchestration ─────────────────────────────
@@ -442,6 +465,8 @@ export async function syncSource(src: Source, password: string | undefined, prog
   const servers = serversOf(src);
   const errors: string[] = [];
   let ok = false;
+  // use the background pre-downloaded copies when they are newer than what we have
+  setPrefetchSince(src.lastSyncAt || 0);
   for (const [i, server] of servers.entries()) {
     src.url = server;
     if (i > 0) progress({ sourceId: src.id, step: 'start', message: `Serveur de secours : ${serverLabel(server)}` });
@@ -454,6 +479,7 @@ export async function syncSource(src: Source, password: string | undefined, prog
       errors.push(`${serverLabel(server)} : ${(e as Error).message.replace(/ — .*$/, '')}`);
     }
   }
+  setPrefetchSince(null);
   if (ok) {
     src.status = errors.length ? 'degraded' : 'ok';
     // keep a trace of the failover for the source card
@@ -467,6 +493,8 @@ export async function syncSource(src: Source, password: string | undefined, prog
     progress({ sourceId: src.id, step: 'error', message: src.lastError });
   }
   await db.sources.put(src);
+  // screens and the catalogue index key off this
+  if (ok) await setMeta(`catalog:version:${src.profileId}`, Date.now());
   return src;
 }
 

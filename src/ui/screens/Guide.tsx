@@ -34,8 +34,8 @@ export function Guide({ channelId }: { channelId?: string }) {
   }, [dayOffset]);
   const dayEnd = day0 + 86400000 + 3 * 3600000;
 
-  const channels = useAsync(() => liveChannels(profile.id, { hideAdult: settings.hideAdult }), [profile.id]);
-  const progs = useAsync(() => programsInRange(day0, dayEnd), [day0], { epg: true });
+  const channels = useAsync(() => liveChannels(profile.id, { hideAdult: settings.hideAdult }), [profile.id], { key: `live:${profile.id}:${settings.hideAdult}` });
+  const progs = useAsync(() => programsInRange(day0, dayEnd), [day0], { epg: true, key: `guide:${day0}` });
   // same order as the TV tab (national ranking × user languages), without the "on air" boost so rows don't move
   const rows = useMemo(() => {
     const prefs = langPrefs(profile);

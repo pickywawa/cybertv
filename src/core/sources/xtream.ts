@@ -31,6 +31,11 @@ export function credsFromM3uUrl(url: string): XtreamCreds | null {
 export class XtreamClient {
   constructor(private c: XtreamCreds) {}
 
+  /** every URL the catalogue sync reads (handed to the background pre-download) */
+  syncUrls(): string[] {
+    return [undefined, 'get_live_categories', 'get_live_streams', 'get_vod_categories', 'get_vod_streams', 'get_series_categories', 'get_series'].map((a) => this.api(a));
+  }
+
   private api(action?: string, extra: Record<string, string> = {}) {
     const q = new URLSearchParams({ username: this.c.username, password: this.c.password, ...extra });
     if (action) q.set('action', action);

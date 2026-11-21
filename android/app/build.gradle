@@ -7,8 +7,8 @@ android {
         applicationId "app.cybertv.player"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "0.3.0"
+        versionCode 4
+        versionName "0.4.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -51,6 +51,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+
+    // Background pre-download of catalogues / EPG while the app is closed
+    implementation "androidx.work:work-runtime:2.10.1"
 
     // Native player: Media3 / ExoPlayer (+ FFmpeg audio for AC3 / E-AC3 / DTS on devices without hw decoders)
     def media3 = '1.9.0'

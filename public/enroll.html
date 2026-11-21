@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>CyberIPTV · Configurer la TV</title>
+<style>
+  :root { --bg: #0b0b0d; --surface: #1c1d22; --border: #2c2d35; --text: #f4f4f6; --text-2: #a8a9b3; --accent: #4fe3a8; --accent-text: #062b1d; --ko: #ff6b7a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 22px 16px 48px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.35rem; margin-bottom: 14px; }
+  .brand b { color: var(--accent); }
+  .brand svg { width: 36px; height: 36px; }
+  h1 { font-size: 1.35rem; margin: 6px 0 6px; }
+  p.lead { color: var(--text-2); margin: 0 0 18px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .app-card { display: none; }
+  .app-card.show { display: block; }
+  label { display: block; font-size: .85rem; color: var(--text-2); margin: 12px 0 6px; font-weight: 600; }
+  input, textarea { width: 100%; background: #111216; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font: inherit; }
+  textarea { min-height: 70px; resize: vertical; }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .seg { display: flex; background: #111216; border-radius: 10px; padding: 4px; gap: 4px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--text-2); padding: 10px; border-radius: 8px; font: inherit; font-weight: 700; }
+  .seg button.on { background: var(--surface); color: var(--text); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; border: 0; border-radius: 12px; padding: 14px; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-text); }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); margin-top: 10px; }
+  .btn[disabled] { opacity: .5; }
+  .hint { font-size: .82rem; color: var(--text-2); margin-top: 6px; }
+  .src-head { display: flex; justify-content: space-between; align-items: center; }
+  .src-head h2 { font-size: 1rem; margin: 0; }
+  .x { background: none; border: 0; color: var(--text-2); font-size: 1.3rem; cursor: pointer; }
+  .msg { margin-top: 12px; font-weight: 600; }
+  .msg.ok { color: var(--accent); }
+  .msg.ko { color: var(--ko); }
+  .done { text-align: center; padding: 30px 10px; }
+  .done svg { width: 64px; height: 64px; color: var(--accent); }
+  .xtream-only, .m3u-only { display: none; }
+  .t-xtream .xtream-only, .t-m3u .m3u-only { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4fe3a8"/><path d="M25 19.5c0-2 2.2-3.2 3.9-2.1l17.4 11.2c1.5 1 1.5 3.3 0 4.3L28.9 44.1c-1.7 1.1-3.9-.1-3.9-2.1z" fill="#0d1f19"/></svg>
+    <span>Cyber<b>IPTV</b></span>
+  </div>
+
+  <div id="form-view">
+    <h1 data-i="title">Configurer la TV</h1>
+    <p class="lead" data-i="lead">Saisis ta source ici : elle sera envoyée directement à la TV, sur ton réseau local.</p>
+
+    <div class="card app-card" id="app-card">
+      <strong data-i="appTitle">L’app CyberIPTV est installée sur ce téléphone ?</strong>
+      <p class="hint" data-i="appText">Envoie ses sources et réglages à la TV sans rien saisir.</p>
+      <a class="btn primary" id="open-app" data-i="openApp">Ouvrir dans l’app CyberIPTV</a>
+    </div>
+
+    <div id="sources"></div>
+    <button class="btn ghost" id="add" type="button" data-i="add">+ Ajouter une autre source</button>
+
+    <div class="card" style="margin-top:14px">
+      <label for="tmdb" data-i="tmdb">Jeton TMDB (optionnel)</label>
+      <input id="tmdb" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <div class="hint" data-i="tmdbHelp">Affiches, résumés et logos des films. Gratuit sur themoviedb.org.</div>
+    </div>
+
+    <button class="btn primary" id="send" type="button" data-i="send">Envoyer à la TV</button>
+    <div class="msg" id="msg" role="status"></div>
+  </div>
+
+  <div id="done-view" class="done" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg>
+    <h1 data-i="doneTitle">Envoyé !</h1>
+    <p class="lead" data-i="doneText">Confirme l’import sur la TV. Tu peux fermer cette page.</p>
+  </div>
+</main>
+
+<template id="src-tpl">
+  <div class="card src t-xtream">
+    <div class="src-head"><h2></h2><button class="x" type="button" aria-label="remove">×</button></div>
+    <div class="seg" style="margin-top:12px">
+      <button type="button" class="on" data-type="xtream" data-i="xtream">Compte Xtream</button>
+      <button type="button" data-type="m3u" data-i="m3u">Lien M3U</button>
+    </div>
+    <label data-i="label">Nom de la source</label>
+    <input name="label" placeholder="Ma source" />
+    <div class="xtream-only">
+      <label data-i="server">Serveur (http://hôte:port)</label>
+      <input name="server" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://exemple.com:8080" />
+      <label data-i="username">Identifiant</label>
+      <input name="username" autocapitalize="off" autocomplete="off" spellcheck="false" />
+      <label data-i="password">Mot de passe</label>
+      <input name="password" type="password" autocomplete="off" />
+    </div>
+    <div class="m3u-only">
+      <label data-i="m3uUrl">URL de la playlist M3U</label>
+      <input name="m3u" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://…/playlist.m3u" />
+    </div>
+    <label data-i="backups">Serveurs / liens de secours (un par ligne, optionnel)</label>
+    <textarea name="backups" autocapitalize="off" spellcheck="false"></textarea>
+    <label data-i="epg">URL EPG XMLTV (optionnel)</label>
+    <input name="epg" inputmode="url" autocapitalize="off" spellcheck="false" />
+  </div>
+</template>
+
+<script>
+(function () {
+  var en = !/^fr/i.test(navigator.language || '');
+  var T = en ? {
+    title: 'Set up the TV', lead: 'Enter your source here: it is sent straight to the TV, over your local network.',
+    appTitle: 'CyberIPTV installed on this phone?', appText: 'Send its sources and settings to the TV without typing anything.',
+    openApp: 'Open in the CyberIPTV app', add: '+ Add another source', tmdb: 'TMDB token (optional)',
+    tmdbHelp: 'Posters, synopses and movie logos. Free on themoviedb.org.', send: 'Send to the TV', doneTitle: 'Sent!',
+    doneText: 'Confirm the import on the TV. You can close this page.', xtream: 'Xtream account', m3u: 'M3U link', label: 'Source name',
+    server: 'Server (http://host:port)', username: 'Username', password: 'Password', m3uUrl: 'M3U playlist URL',
+    backups: 'Backup servers / links (one per line, optional)', epg: 'XMLTV EPG URL (optional)', source: 'Source',
+    invalid: 'Fill in the server, username and password (Xtream) or the playlist link (M3U).', error: 'The TV did not answer. Is the setup screen still open?'
+  } : {
+    source: 'Source', invalid: 'Renseigne le serveur, l’identifiant et le mot de passe (Xtream) ou le lien de la playlist (M3U).',
+    error: 'La TV ne répond pas. L’écran de configuration est-il toujours ouvert ?'
+  };
+  function tr(root) {
+    if (!en) return;
+    root.querySelectorAll('[data-i]').forEach(function (el) { var k = el.getAttribute('data-i'); if (T[k]) el.textContent = T[k]; });
+    document.documentElement.lang = 'en';
+  }
+  tr(document);
+
+  // "Open in the app": Android Chrome intent link, back to this page when the app isn't installed
+  if (/Android/i.test(navigator.userAgent)) {
+    var here = location.href.split('#')[0];
+    var link = 'intent://enroll?target=' + encodeURIComponent(here) +
+      '#Intent;scheme=cyberiptv;package=app.cybertv.player;S.browser_fallback_url=' + encodeURIComponent(here + '#noapp') + ';end';
+    document.getElementById('open-app').href = link;
+    if (location.hash !== '#noapp') document.getElementById('app-card').classList.add('show');
+  }
+
+  var list = document.getElementById('sources');
+  var tpl = document.getElementById('src-tpl');
+  function renumber() {
+    list.querySelectorAll('.src').forEach(function (c, i) {
+      c.querySelector('h2').textContent = (en ? T.source : 'Source') + ' ' + (i + 1);
+      c.querySelector('.x').style.visibility = list.children.length > 1 ? 'visible' : 'hidden';
+    });
+  }
+  function addSource() {
+    var node = tpl.content.firstElementChild.cloneNode(true);
+    tr(node);
+    node.querySelectorAll('.seg button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        node.querySelectorAll('.seg button').forEach(function (x) { x.classList.toggle('on', x === b); });
+        node.classList.toggle('t-xtream', b.dataset.type === 'xtream');
+        node.classList.toggle('t-m3u', b.dataset.type === 'm3u');
+      });
+    });
+    node.querySelector('.x').addEventListener('click', function () { node.remove(); renumber(); });
+    list.appendChild(node);
+    renumber();
+  }
+  document.getElementById('add').addEventListener('click', addSource);
+  addSource();
+
+  function val(c, n) { var el = c.querySelector('[name="' + n + '"]'); return el ? el.value.trim() : ''; }
+  function collect() {
+    var out = [];
+    var ok = true;
+    list.querySelectorAll('.src').forEach(function (c) {
+      var xtream = c.classList.contains('t-xtream');
+      var s = {
+        type: xtream ? 'xtream' : 'm3u',
+        label: val(c, 'label'),
+        url: xtream ? val(c, 'server') : val(c, 'm3u'),
+        backups: val(c, 'backups').split(/\s+/).filter(Boolean),
+        username: xtream ? val(c, 'username') : undefined,
+        password: xtream ? c.querySelector('[name="password"]').value : undefined,
+        epgUrls: val(c, 'epg') ? [val(c, 'epg')] : []
+      };
+      if (!s.url || (xtream && (!s.username || !s.password))) ok = false;
+      out.push(s);
+    });
+    return ok ? out : null;
+  }
+
+  var msg = document.getElementById('msg');
+  document.getElementById('send').addEventListener('click', function () {
+    var sources = collect();
+    msg.className = 'msg';
+    if (!sources) { msg.textContent = en ? T.invalid : 'Renseigne le serveur, l’identifiant et le mot de passe (Xtream) ou le lien de la playlist (M3U).'; msg.classList.add('ko'); return; }
+    var btn = this;
+    btn.disabled = true;
+    var body = { v: 1, from: 'form', sources: sources };
+    var tmdb = document.getElementById('tmdb').value.trim();
+    if (tmdb) body.tmdb = tmdb;
+    fetch(location.pathname, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); })
+      .then(function () { document.getElementById('form-view').hidden = true; document.getElementById('done-view').hidden = false; })
+      .catch(function () { msg.textContent = en ? T.error : 'La TV ne répond pas. L’écran de configuration est-il toujours ouvert ?'; msg.classList.add('ko'); btn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

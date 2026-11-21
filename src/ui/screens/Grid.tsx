@@ -27,6 +27,7 @@ export function Grid({ kind, title, filter }: { kind: 'movie' | 'series'; title:
   const items = useAsync<(Movie | Series)[]>(
     () => (kind === 'movie' ? gridMovies(profile.id, { ...filter, sort }, hideAdult, langPrefs(profile)) : gridSeries(profile.id, { ...filter, sort }, hideAdult, langPrefs(profile))),
     [kind, JSON.stringify(filter), sort, profile.id, profile.lang, profile.audioLangs?.join(), profile.subLangs?.join()],
+    { key: `grid:${profile.id}:${kind}:${JSON.stringify(filter)}:${sort}:${hideAdult}:${profile.lang}:${profile.audioLangs?.join()}:${profile.subLangs?.join()}` },
   );
   useEffect(() => {
     if (items) prioritizeEnrichment(kind, items.slice(0, 40));

@@ -212,8 +212,45 @@ export async function latestSeries(profileId: string, limit = 40, hideAdult = tr
   return dedupLang(rows.filter((m) => !(hideAdult && m.universe === 'adult')), prefs).slice(0, limit);
 }
 
+// ─────────── catalogue index ───────────
+/**
+ * Light in-memory copy of a profile's movies / series (no plot, cast…), shared by the grids and
+ * the home genre rails: one IndexedDB scan instead of one per screen. Rebuilt after a sync, and at
+ * most every 45 s while TMDB enrichment keeps updating posters.
+ */
+const INDEX_TTL = 45000;
+type Lite<T> = T;
+const index = new Map<string, { at: number; version: number; rows: unknown[] }>();
+
+const liteMovie = (m: Movie): Movie => {
+  const { plot: _p, cast: _c, director: _d, trailer: _t, ...rest } = m;
+  return rest as Movie;
+};
+const liteSeries = (s: Series): Series => {
+  const { plot: _p, cast: _c, trailer: _t, ...rest } = s;
+  return rest as Series;
+};
+
+async function catalog<T extends Movie | Series>(profileId: string, kind: 'movie' | 'series'): Promise<Lite<T>[]> {
+  const key = `${kind}:${profileId}`;
+  const version = (await getMeta<number>(`catalog:version:${profileId}`)) || 0;
+  const cur = index.get(key);
+  if (cur && cur.version === version && Date.now() - cur.at < INDEX_TTL) return cur.rows as T[];
+  const rows =
+    kind === 'movie'
+      ? (await db.movies.where('profileId').equals(profileId).toArray()).map(liteMovie)
+      : (await db.series.where('profileId').equals(profileId).toArray()).map(liteSeries);
+  index.set(key, { at: Date.now(), version, rows });
+  return rows as T[];
+}
+
+/** forget the index (sources removed, profile deleted…) */
+export function invalidateCatalogIndex() {
+  index.clear();
+}
+
 export async function moviesSample(profileId: string, limit = 3000): Promise<Movie[]> {
-  return db.movies.where('profileId').equals(profileId).limit(limit).toArray();
+  return (await catalog<Movie>(profileId, 'movie')).slice(0, limit);
 }
 
 export interface GridQuery {
@@ -225,8 +262,8 @@ export interface GridQuery {
 
 export async function gridMovies(profileId: string, q: GridQuery, hideAdult: boolean, prefs?: LangPrefs): Promise<Movie[]> {
   let rows = q.categoryId
-    ? await db.movies.where('categoryId').equals(q.categoryId).toArray()
-    : await db.movies.where('profileId').equals(profileId).toArray();
+    ? (await db.movies.where('categoryId').equals(q.categoryId).toArray()).map(liteMovie)
+    : await catalog<Movie>(profileId, 'movie');
   rows = rows.filter(
     (m) =>
       !(hideAdult && m.universe === 'adult') &&
@@ -239,8 +276,8 @@ export async function gridMovies(profileId: string, q: GridQuery, hideAdult: boo
 
 export async function gridSeries(profileId: string, q: GridQuery, hideAdult: boolean, prefs?: LangPrefs): Promise<Series[]> {
   let rows = q.categoryId
-    ? await db.series.where('categoryId').equals(q.categoryId).toArray()
-    : await db.series.where('profileId').equals(profileId).toArray();
+    ? (await db.series.where('categoryId').equals(q.categoryId).toArray()).map(liteSeries)
+    : await catalog<Series>(profileId, 'series');
   rows = rows.filter(
     (m) =>
       !(hideAdult && m.universe === 'adult') &&
@@ -373,6 +410,7 @@ export async function favoritesOf(profileId: string, kind?: Favorite['kind']): P
 }
 
 export async function deleteProfileData(profileId: string) {
+  invalidateCatalogIndex();
   const sources = await db.sources.where('profileId').equals(profileId).primaryKeys();
   await db.transaction('rw', [db.sources, db.categories, db.channels, db.movies, db.series, db.episodes, db.watch, db.favorites, db.profiles], async () => {
     for (const sid of sources) {
@@ -390,6 +428,7 @@ export async function deleteProfileData(profileId: string) {
 }
 
 export async function deleteSourceData(sourceId: string) {
+  invalidateCatalogIndex();
   await db.transaction('rw', [db.sources, db.categories, db.channels, db.movies, db.series, db.episodes], async () => {
     await db.categories.where('sourceId').equals(sourceId).delete();
     await db.channels.where('sourceId').equals(sourceId).delete();

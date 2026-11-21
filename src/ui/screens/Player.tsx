@@ -13,6 +13,9 @@ import { nowNext, programsFor, saveProgress } from '@/core/repo';
 import { fmtDuration, fmtTime, t } from '@/core/i18n';
 import { useApp } from '@/state/store';
 import { rememberServer } from '@/core/profiles';
+import { useExternalSubs, type ExternalSubs } from '../hooks/useExternalSubs';
+import { SubtitleOverlay } from '../components/SubtitleOverlay';
+import { flagOf } from '@/core/util/lang';
 import { langPrefs, subMode } from '@/core/prefs';
 import { toLang } from '@/core/util/lang';
 import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
@@ -268,6 +271,28 @@ export function Player({ req }: { req: PlayRequest }) {
 
   // ───────── commands ─────────
   const eng = () => engineRef.current;
+
+  // ───────── external subtitles (OpenSubtitles) ─────────
+  const ext = useExternalSubs({ req, profile, tracks, streamUrl: cands[candIdx]?.url, vod: mode === 'vod', playing: st.status === 'playing' });
+  // playhead for the subtitle overlay: exact on the web, interpolated between native updates (500 ms)
+  const head = useRef({ pos: 0, at: 0, playing: false, rate: 1 });
+  useEffect(() => {
+    head.current = { pos: st.position, at: performance.now(), playing: st.status === 'playing', rate };
+  }, [st.position, st.status, rate]);
+  const getTime = useCallback(() => {
+    if (!isNative && videoRef.current) return videoRef.current.currentTime;
+    const h = head.current;
+    return h.playing ? h.pos + ((performance.now() - h.at) / 1000) * h.rate : h.pos;
+  }, []);
+  const onTextTrack = (type: 'audio' | 'text' | 'video', id: string | null) => {
+    // an embedded track and an external file never show together
+    if (type === 'text') void ext.select(null);
+    eng()?.selectTrack(type, id);
+  };
+  const pickExternal = (r: Parameters<ExternalSubs['select']>[0]) => {
+    eng()?.selectTrack('text', null);
+    void ext.select(r);
+  };
   const togglePlay = useCallback(() => {
     const e = eng();
     if (!e) return;
@@ -573,6 +598,7 @@ export function Player({ req }: { req: PlayRequest }) {
     <div className="player" ref={rootRef} data-scope onPointerMove={() => !touch && poke()}>
       {!isNative && <video ref={videoRef} playsInline autoPlay onPointerUp={onSurfaceTap} />}
       <div className="ui-surface" style={{ position: 'absolute', inset: 0 }} onPointerUp={onSurfaceTap} />
+      {ext.active && ext.cues.length > 0 && <SubtitleOverlay cues={ext.cues} offset={ext.offset} getTime={getTime} raised={uiVisible && !pip} />}
 
       {loading && !fatal && (
         <div className="center-spin">
@@ -771,7 +797,9 @@ export function Player({ req }: { req: PlayRequest }) {
               fit={fit}
               rate={rate}
               vod={mode === 'vod'}
-              onTrack={(type, id) => eng()?.selectTrack(type, id)}
+              onTrack={onTextTrack}
+              ext={ext}
+              onExternal={pickExternal}
               onCand={(i) => setCandIdx(i)}
               onFit={(m) => (setFit(m), eng()?.setFit(m))}
               onRate={(r) => (setRate(r), eng()?.setRate(r))}
@@ -886,6 +914,8 @@ function SettingsPanel(p: {
   rate: number;
   vod: boolean;
   onTrack: (type: 'audio' | 'text' | 'video', id: string | null) => void;
+  ext: ExternalSubs;
+  onExternal: (r: ExternalSubs['results'][number] | null) => void;
   onCand: (i: number) => void;
   onFit: (m: 'fit' | 'fill' | 'zoom') => void;
   onRate: (r: number) => void;
@@ -902,10 +932,37 @@ function SettingsPanel(p: {
       <h3><IcSubtitles width={18} height={18} /> {t('player.subtitles')}</h3>
       <Menu
         items={[
-          { label: t('player.off'), checked: !p.tracks.text.some((x) => x.selected), onSelect: () => p.onTrack('text', null) },
-          ...p.tracks.text.map((a) => ({ label: a.label, checked: a.selected, onSelect: () => p.onTrack('text', a.id) })),
+          { label: t('player.off'), checked: !p.tracks.text.some((x) => x.selected) && !p.ext.active, onSelect: () => p.onTrack('text', null) },
+          ...p.tracks.text.map((a) => ({ label: a.label, checked: a.selected && !p.ext.active, onSelect: () => p.onTrack('text', a.id) })),
+          ...p.ext.results.slice(0, 8).map((r) => ({
+            label: `${flagOf(r.lang)} ${r.lang.toUpperCase()} · ${r.release || 'OpenSubtitles'}${r.hashMatch ? ` · ✓ ${t('os.exact')}` : ''}`,
+            checked: p.ext.active?.fileId === r.fileId,
+            onSelect: () => p.onExternal(r),
+          })),
         ]}
       />
+      {p.ext.enabled && (
+        <div className="ext-subs-tools">
+          {(p.ext.status === 'idle' || p.ext.status === 'error') && (
+            <button className="btn small" data-f onClick={() => void p.ext.search()}>{t('os.search')}</button>
+          )}
+          {p.ext.status === 'searching' && <span className="small"><span className="spinner" style={{ display: 'inline-block', verticalAlign: -4, marginRight: 8 }} />{t('os.searching')}</span>}
+          {p.ext.status === 'none' && <span className="small dim">{t('os.none')}</span>}
+          {p.ext.status === 'quota' && <span className="small msg-ko">{t('os.quota')}</span>}
+          {p.ext.status === 'error' && <span className="small msg-ko">{t('os.error')}</span>}
+          {p.ext.active && (
+            <>
+              <div className="offset-row" data-row>
+                <span className="small">{t('os.offset')}</span>
+                <button className="btn small" data-f onClick={() => p.ext.shift(-0.5)}>− 0,5 s</button>
+                <span className="offset-val">{p.ext.offset > 0 ? '+' : ''}{p.ext.offset.toFixed(1).replace('.', ',')} s</span>
+                <button className="btn small" data-f onClick={() => p.ext.shift(0.5)}>+ 0,5 s</button>
+              </div>
+              <p className="xs" style={{ opacity: 0.6, margin: '6px 4px 0' }}>{t('os.offsetHelp')}</p>
+            </>
+          )}
+        </div>
+      )}
       {(p.tracks.video.length > 1 || p.cands.length > 1) && (
         <>
           <h3><IcHd width={18} height={18} /> {t('player.quality')}</h3>

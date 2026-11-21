@@ -426,7 +426,31 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - Contenu web : ZIP vérifié (SHA-256), décompressé dans `files/web/<version>` et déclaré comme `serverBasePath` Capacitor (ignoré automatiquement après installation d'un nouvel APK). Retour au contenu de l'APK après 2 démarrages sans confirmation `updateBootOk`.
 - APK : téléchargé dans le cache puis remis à l'installeur Android (`REQUEST_INSTALL_PACKAGES` + FileProvider). Une installation 100 % silencieuse est impossible hors Play Store / appareil géré.
 
+### Enrôlement par QR code (V1.3)
+- TV : `EnrollServer.java` ouvre un serveur HTTP sur l'adresse du réseau local (port aléatoire, jeton aléatoire de 144 bits, 256 Ko max, arrêt à la fermeture de l'écran ou après 15 min). Le QR code contient `http://<ip-tv>:<port>/e/<jeton>`.
+- Téléphone sans l'app : la page `public/enroll.html` (servie par la TV) envoie un formulaire (sources Xtream/M3U, serveurs de secours, EPG, jeton TMDB).
+- Téléphone avec l'app : la page propose « Ouvrir dans l'app CyberIPTV » (`intent://enroll?target=…`, Android/Chrome). L'app ouvre « Envoyer à une TV » et transmet les sources choisies (mots de passe compris), le jeton TMDB et les préférences, uniquement vers une adresse de réseau privé.
+- La TV affiche un résumé et demande confirmation avant tout import. Tout passe sur le réseau local, en HTTP (pas de TLS possible sans certificat) : à n'utiliser que sur un Wi-Fi de confiance.
+- Web : `dev-server/enroll.ts` reproduit le serveur, le parcours complet se teste dans le navigateur.
+- Limite : sans domaine vérifié (Android App Links), le QR ne peut pas ouvrir l'app directement ; il faut toucher « Ouvrir dans l'app ».
+
+### Sous-titres OpenSubtitles (V1.3)
+- Réglages → Services : clé API gratuite (obligatoire pour télécharger) et compte optionnel (20 téléchargements par jour au lieu de 5). Profil → Sous-titres : « Récupérer des sous-titres sur OpenSubtitles », activé par défaut.
+- Recherche automatique en VOD quand le profil veut des sous-titres et que le flux n'en a pas dans ses langues. Recherche par id TMDB (film, ou série + saison + épisode) avec le hash OpenSubtitles du fichier (2 requêtes de 64 Ko) : les sous-titres calés sur ce fichier précis passent en tête.
+- Synchro : affichage HTML piloté par la position de lecture (interpolée entre les mises à jour natives de 500 ms), décalage réglable de ±0,5 s et retenu par vidéo, choix entre plusieurs versions dans le panneau du lecteur. Les fichiers téléchargés restent en cache (quota quotidien faible).
+
+### Préchargement en arrière-plan (V1.4, approche 1)
+- `PrefetchWorker.java` (WorkManager) : tâche périodique (moitié de l'intervalle de synchro, 3 h minimum), en Wi-Fi/Ethernet par défaut, batterie et stockage non faibles. Android conserve la planification après un redémarrage.
+- Le plan (URL M3U, réponses API Xtream, guides XMLTV) est construit par la synchro et stocké chiffré (Keystore), car il contient les identifiants Xtream. Les fichiers bruts vont dans `cache/prefetch/`, avec des requêtes conditionnelles (ETag / Last-Modified, réponse 304 = rien à retélécharger).
+- À l'ouverture : si un préchargement est plus récent que la dernière synchro, la synchro démarre aussitôt, sans indicateur. Elle lit les copies locales via `LocalProxy /cached` (uniquement si elles sont plus récentes que les données en base, sinon réseau). Il ne reste que l'analyse.
+- Réglages → Synchronisation : activer/désactiver, Wi-Fi uniquement, état du dernier préchargement, « Précharger maintenant ».
+
+### Affichage instantané
+- Cache « dernier résultat » par écran (accueil, grilles, TV, chaînes, guide, mes vidéos) : un onglet revisité s'affiche aussitôt puis se met à jour.
+- Instantané de l'accueil enregistré (au plus toutes les 20 s) et rechargé avant le premier affichage : l'accueil est visible tout de suite au lancement.
+- Index léger du catalogue en mémoire (sans résumés ni castings), partagé par les grilles et les rails par genre. Avec 30 000 films : réouverture d'une grille en 83 ms contre environ 600 ms auparavant.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.
-- V2 : synchro app fermée (WorkManager), Cast, enrôlement par QR code, timeshift local, téléchargements.
+- V2 : Cast, timeshift local, téléchargements.

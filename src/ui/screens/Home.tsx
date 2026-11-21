@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/state/store';
 import { t, fmtDuration } from '@/core/i18n';
-import { db } from '@/core/db';
+import { db, setMeta } from '@/core/db';
 import {
   continueWatching, dedup, dedupLang, favoritesOf, hideFromContinue, latestMovies, latestSeries, matchMovies, matchSeries, moviesSample, tmdbLists,
 } from '@/core/repo';
@@ -18,6 +18,17 @@ import { langScore, sortByLang } from '@/core/util/lang';
 
 type HeroItem = { kind: 'movie' | 'series'; item: Movie | Series };
 
+export const homeKey = (profileId: string, prefsKey: string, hideAdult: boolean) => `home:${profileId}:${prefsKey}:${hideAdult}`;
+export const homePrefsKey = (p: { lang: string; audioLangs?: string[]; subLangs?: string[] }) => `${p.lang}|${p.audioLangs?.join()}|${p.subLangs?.join()}`;
+
+let lastSnapshot = 0;
+/** persisted (throttled) so the next launch shows Home immediately — see loadHomeSnapshot() */
+function saveHomeSnapshot(profileId: string, key: string, data: unknown) {
+  if (Date.now() - lastSnapshot < 20000) return;
+  lastSnapshot = Date.now();
+  void setMeta(`snapshot:home:${profileId}`, { key, data, at: Date.now() }).catch(() => {});
+}
+
 const TILES = [
   { key: 'cinema', Icon: IcFilm },
   { key: 'series', Icon: IcSeries },
@@ -33,7 +44,7 @@ export function Home() {
   const setTab = useApp((s) => s.setTab);
   const hideAdult = settings.hideAdult || (profile.parental.enabled && !useApp.getState().unlockedAdult);
 
-  const prefsKey = `${profile.lang}|${profile.audioLangs?.join()}|${profile.subLangs?.join()}`;
+  const prefsKey = homePrefsKey(profile);
   const data = useAsync(async () => {
     const prefs = langPrefs(profile);
     const lists = await tmdbLists(profile.lang);
@@ -67,7 +78,13 @@ export function Home() {
       cont, fresh, newSeries, top: top.slice(0, 10), nowPlaying, popularMovies, mustSee, trendingTv, popularTv, genres, kids, favMovies, favSeries,
       hasVod: sample.length > 0 || newSeries.length > 0,
     };
-  }, [profile.id, prefsKey, hideAdult]);
+  }, [profile.id, prefsKey, hideAdult], { key: homeKey(profile.id, prefsKey, hideAdult) });
+
+  // snapshot for the next cold start: Home renders at once, then refreshes
+  useEffect(() => {
+    if (data) saveHomeSnapshot(profile.id, homeKey(profile.id, prefsKey, hideAdult), data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   // enrich what's on screen first
   useEffect(() => {

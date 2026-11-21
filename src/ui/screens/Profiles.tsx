@@ -8,6 +8,7 @@ import { useApp, applyTheme } from '@/state/store';
 import { selectProfile } from '@/app/services';
 import { COUNTRIES, LANGUAGES } from '@/core/util/lang';
 import { langPrefs, profileCountry, subMode } from '@/core/prefs';
+import { hasOsKey } from '@/core/subs/opensubtitles';
 import { Logo } from '@/app/App';
 import { Onboarding } from './Onboarding';
 import { PinPad } from '../components/PinPad';
@@ -123,6 +124,8 @@ export function ProfileEdit({ profileId }: { profileId?: string }) {
   const pop = useApp((s) => s.pop);
   const [pinMode, setPinMode] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [osReady, setOsReady] = useState<boolean | null>(null);
+  useEffect(() => void hasOsKey(id).then(setOsReady), [id]);
   if (!p) return null;
   const patch = async (x: Partial<Profile>) => {
     await updateProfile(p.id, x);
@@ -174,6 +177,12 @@ export function ProfileEdit({ profileId }: { profileId?: string }) {
             ))}
           </div>
         </div>
+        <Toggle
+          label={t('os.profileToggle')}
+          sub={osReady === false ? t('os.profileNoKey') : t('os.profileSub')}
+          on={p.subsOnline !== false}
+          onChange={(v) => void patch({ subsOnline: v })}
+        />
         <div className="btn-row" style={{ marginTop: 20 }}>
           {confirmDel ? (
             <>

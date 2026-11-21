@@ -10,6 +10,10 @@ import { SourceForm, draftInput, draftValid, emptyDraft, type SourceDraft } from
 import { focusFirst } from '../spatial';
 import { IcCheck, IcTrash } from '../icons';
 import { db } from '@/core/db';
+import { EnrollPanel } from '../components/EnrollPanel';
+import { isTvMode } from '@/core/platform';
+import { updateProfile } from '@/core/profiles';
+import type { EnrollPayload } from '@/core/enroll';
 
 const DEV_TMDB = (import.meta.env.DEV && (import.meta.env.VITE_DEV_TMDB_TOKEN as string)) || '';
 
@@ -29,6 +33,26 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
   const [token, setToken] = useState(DEV_TMDB);
   const [tokenState, setTokenState] = useState<'idle' | 'busy' | 'ok' | 'ko'>('idle');
   const [profile, setProfile] = useState<Profile | null>(null);
+  // TV: the phone is the easiest way to enter credentials, so it is offered first
+  const [qr, setQr] = useState(false);
+  const [phonePrefs, setPhonePrefs] = useState<EnrollPayload['prefs'] | undefined>();
+  const fromPhone = (p: EnrollPayload, withPrefs: boolean) => {
+    setDrafts((d) => [
+      ...d,
+      ...p.sources.map((s) => ({
+        type: s.type, label: s.label, url: s.url, backups: s.backups || [], username: s.username || '', password: s.password || '',
+        epg: (s.epgUrls || []).join('\n'),
+      })),
+    ]);
+    if (p.tmdb) setToken(p.tmdb);
+    if (withPrefs && p.prefs) {
+      setPhonePrefs(p.prefs);
+      if (p.prefs.lang) changeLang(p.prefs.lang);
+    }
+    setDraft(emptyDraft());
+    setQr(false);
+    setStep(2);
+  };
 
   const changeLang = (l: Lang) => {
     setLang(l);
@@ -36,7 +60,7 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
   };
   useEffect(() => {
     requestAnimationFrame(() => focusFirst(document.querySelector('.onboard') || document.body));
-  }, [step]);
+  }, [step, qr]);
 
   const allDrafts = draftValid(draft) ? [...drafts, draft] : drafts;
 
@@ -56,6 +80,10 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
 
   const finish = async () => {
     const p = await createProfile({ name, emoji, color, lang });
+    if (phonePrefs) {
+      const patch = Object.fromEntries(Object.entries(phonePrefs).filter(([k, v]) => v !== undefined && k !== 'lang')) as Partial<Profile>;
+      if (Object.keys(patch).length) await updateProfile(p.id, patch);
+    }
     for (const d of allDrafts) {
       await saveSource(p.id, draftInput(d));
     }
@@ -112,9 +140,14 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
           </div>
         )}
 
-        {step === 1 && (
+        {step === 1 && qr && <EnrollPanel onImport={fromPhone} onCancel={() => setQr(false)} />}
+
+        {step === 1 && !qr && (
           <div className="form">
             <h2>{t('onboard.step.source')}</h2>
+            <button className={`btn ${isTvMode() ? 'primary' : ''} qr-cta`} data-f data-autofocus={isTvMode() || undefined} onClick={() => setQr(true)}>
+              📱 {t('enroll.qrButton')}
+            </button>
             {drafts.length > 0 && (
               <div className="list">
                 {drafts.map((d, i) => (

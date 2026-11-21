@@ -44,8 +44,37 @@ export async function fetchWithTimeout(url: string, init: RequestInit & { timeou
   }
 }
 
+// ─────────── background pre-download (Android PrefetchWorker) ───────────
+let prefetchSince: number | null = null;
+let prefetchHits = 0;
+
+/**
+ * While set, catalogue/EPG requests first ask the native proxy for a copy downloaded in the
+ * background (WorkManager) that is newer than `since` (ms); otherwise they go to the network.
+ */
+export function setPrefetchSince(since: number | null) {
+  prefetchSince = since;
+}
+export function takePrefetchHits(): number {
+  const n = prefetchHits;
+  prefetchHits = 0;
+  return n;
+}
+
+async function prefetched(url: string): Promise<Response | null> {
+  if (prefetchSince === null || !proxyBase || !proxyBase.startsWith('http://127.0.0.1')) return null;
+  try {
+    const res = await fetch(`${proxyBase.replace('/proxy?u=', '/cached?u=')}${encodeURIComponent(url)}&since=${prefetchSince}`);
+    if (res.status !== 200 || !res.body) return null;
+    prefetchHits++;
+    return res;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchJson<T>(url: string, timeoutMs = 45000): Promise<T> {
-  const res = await fetchWithTimeout(url, { timeoutMs });
+  const res = (await prefetched(url)) || (await fetchWithTimeout(url, { timeoutMs }));
   const text = await res.text();
   try {
     return JSON.parse(text) as T;
@@ -56,7 +85,7 @@ export async function fetchJson<T>(url: string, timeoutMs = 45000): Promise<T> {
 
 /** Returns a decoded text stream, transparently gunzipping `.gz` payloads */
 export async function fetchTextStream(url: string, timeoutMs = 120000): Promise<ReadableStream<string>> {
-  const res = await fetchWithTimeout(url, { timeoutMs });
+  const res = (await prefetched(url)) || (await fetchWithTimeout(url, { timeoutMs }));
   if (!res.body) throw new Error('Corps de réponse vide');
   const [probe, body] = res.body.tee();
   const reader = probe.getReader();

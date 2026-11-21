@@ -117,6 +117,75 @@ public class CyberNativePlugin extends Plugin {
         call.resolve(r);
     }
 
+    // ───────────────────────── background pre-download (see PrefetchWorker) ─────────────────────────
+
+    @PluginMethod
+    public void prefetchSchedule(PluginCall call) {
+        String plan = call.getString("plan");
+        if (plan == null) {
+            call.reject("plan required");
+            return;
+        }
+        try {
+            PrefetchWorker.schedule(getContext(), plan, call.getInt("intervalH", 6), Boolean.TRUE.equals(call.getBoolean("wifiOnly", true)));
+            if (Boolean.TRUE.equals(call.getBoolean("runNow", false))) PrefetchWorker.runNow(getContext(), Boolean.TRUE.equals(call.getBoolean("wifiOnly", true)));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("schedule failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void prefetchCancel(PluginCall call) {
+        PrefetchWorker.cancel(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void prefetchStatus(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(PrefetchWorker.status(getContext())));
+        } catch (Exception e) {
+            call.reject(e.getMessage());
+        }
+    }
+
+    // ───────────────────────── QR enrolment (see EnrollServer) ─────────────────────────
+
+    private EnrollServer enroll;
+
+    @PluginMethod
+    public void enrollStart(PluginCall call) {
+        new Thread(() -> {
+            try {
+                if (enroll == null) enroll = new EnrollServer(getContext(), (json) -> {
+                    JSObject ev = new JSObject();
+                    ev.put("payload", json);
+                    notifyListeners("enrollReceived", ev);
+                });
+                JSObject r = new JSObject();
+                r.put("url", enroll.start());
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject("enroll unavailable: " + e.getMessage());
+            }
+        }, "cyber-enroll-start").start();
+    }
+
+    @PluginMethod
+    public void enrollPoll(PluginCall call) {
+        JSObject r = new JSObject();
+        String p = enroll != null ? enroll.takePayload() : null;
+        if (p != null) r.put("payload", p);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void enrollStop(PluginCall call) {
+        if (enroll != null) enroll.stop();
+        call.resolve();
+    }
+
     // ───────────────────────── self-update (see Updater) ─────────────────────────
 
     @PluginMethod

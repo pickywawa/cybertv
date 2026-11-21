@@ -9,6 +9,8 @@ const SettingsSectionView = lazy(() => import('./screens/Settings').then((m) => 
 const SourceEdit = lazy(() => import('./screens/SourceEdit').then((m) => ({ default: m.SourceEdit })));
 const ProfilesManage = lazy(() => import('./screens/Profiles').then((m) => ({ default: m.ProfilesManage })));
 const ProfileEdit = lazy(() => import('./screens/Profiles').then((m) => ({ default: m.ProfileEdit })));
+const EnrollScreen = lazy(() => import('./screens/Enroll').then((m) => ({ default: m.EnrollScreen })));
+const SendToTv = lazy(() => import('./screens/Enroll').then((m) => ({ default: m.SendToTv })));
 
 export function StackView() {
   const r = useRoute();
@@ -24,6 +26,8 @@ export function StackView() {
       {r.name === 'source-edit' && <SourceEdit sourceId={r.sourceId} />}
       {r.name === 'profiles' && <ProfilesManage />}
       {r.name === 'profile-edit' && <ProfileEdit profileId={r.profileId} />}
+      {r.name === 'enroll' && <EnrollScreen />}
+      {r.name === 'send-to-tv' && <SendToTv target={r.target} />}
     </div>
   );
 }

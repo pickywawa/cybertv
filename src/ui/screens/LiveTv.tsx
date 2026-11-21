@@ -42,9 +42,9 @@ export function LiveTv() {
   const country = profileCountry(profile);
 
   const hideAdult = settings.hideAdult && !(profile.parental.enabled && unlocked);
-  const channels = useAsync(() => liveChannels(profile.id, { hideAdult }), [profile.id, hideAdult]);
-  const favs = useAsync(() => favoritesOf(profile.id, 'live'), [profile.id, menuFor]);
-  const epg = useAsync(() => nowNext(), [minute], { epg: true });
+  const channels = useAsync(() => liveChannels(profile.id, { hideAdult }), [profile.id, hideAdult], { key: `live:${profile.id}:${hideAdult}` });
+  const favs = useAsync(() => favoritesOf(profile.id, 'live'), [profile.id, menuFor], { key: `favs:live:${profile.id}` });
+  const epg = useAsync(() => nowNext(), [minute], { epg: true, key: 'nownext' });
   const evening = useAsync(() => (mode === 'tonight' ? tonight(settings.tonightStartMin) : Promise.resolve(new Map<string, Program>())), [mode, settings.tonightStartMin], { epg: true });
 
   const favKeys = useMemo(() => new Set((favs || []).map((f) => f.key.replace(/^live:/, ''))), [favs]);

@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import { setProxyBase } from '@/core/net/http';
-import { syncProfile, syncEpg, syncSource, testSource, loadXtreamEpisodes } from '@/core/sync/sync';
+import { syncProfile, syncEpg, syncSource, testSource, loadXtreamEpisodes, prefetchPlan } from '@/core/sync/sync';
+import { takePrefetchHits } from '@/core/net/http';
 import { Tmdb } from '@/core/enrich/tmdb';
 import { Enricher, enrichSeason, refreshLists } from '@/core/enrich/enrich';
 import { db } from '@/core/db';
@@ -36,6 +37,15 @@ const api = {
     const s = await db.sources.get(sourceId);
     if (!s) return null;
     return syncSource(s, password, onProgress);
+  },
+
+  prefetchPlan(profileId: string, secrets: Secrets) {
+    return prefetchPlan(profileId, secrets);
+  },
+
+  /** how many requests of the last sync were served from the background pre-download */
+  prefetchHits() {
+    return takePrefetchHits();
   },
 
   testSource(src: Pick<Source, 'type' | 'url' | 'username' | 'servers'>, password?: string) {

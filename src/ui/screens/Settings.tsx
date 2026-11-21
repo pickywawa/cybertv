@@ -4,15 +4,16 @@ import { db, getMeta, setMeta } from '@/core/db';
 import { t, fmtDate, fmtTime, setLang } from '@/core/i18n';
 import type { Category, Profile, ThemeId } from '@/core/types';
 import { moveSource, removeSource, setTmdbToken, updateProfile } from '@/core/profiles';
-import { secureGet, tmdbKey } from '@/core/secure';
+import { secureGet, secureRemove, secureSet, tmdbKey, osKey, osPassKey, osUserKey } from '@/core/secure';
+import { hasOsKey, validateOs } from '@/core/subs/opensubtitles';
 import { dataWorker, proxyCb } from '@/core/workers';
 import { loadSecrets } from '@/core/repo';
 import { useApp, applyTheme, type SettingsSection } from '@/state/store';
-import { runSync, runUpdateCheck, startEnrichment } from '@/app/services';
+import { runSync, runUpdateCheck, schedulePrefetch, startEnrichment } from '@/app/services';
 import { APP_VERSION } from '@/core/updater';
 import { serverLabel } from '@/core/sources/servers';
 import { setSmoothScroll } from '../spatial';
-import { isNative } from '@/core/platform';
+import { isNative, isTvMode } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { Toggle } from '../components/Overlay';
 import { PageHeader } from '../components/BackButton';
@@ -57,7 +58,12 @@ export function SettingsSectionView({ section }: { section: SettingsSection }) {
       <PageHeader title={t(`settings.${section}` as 'settings.sources')} />
       <div style={{ marginTop: 16 }}>
         {section === 'sources' && <SourcesSection />}
-        {section === 'services' && <ServicesSection />}
+        {section === 'services' && (
+          <>
+            <ServicesSection />
+            <OpenSubtitlesBox />
+          </>
+        )}
         {section === 'appearance' && <AppearanceSection />}
         {section === 'player' && <PlayerSection />}
         {section === 'parental' && <ParentalSection />}
@@ -113,7 +119,69 @@ function SourcesSection() {
           </div>
         </div>
       ))}
-      <button className="btn primary" data-f onClick={() => push({ name: 'source-edit' })}>+ {t('settings.addSource')}</button>
+      <div className="btn-row">
+        <button className="btn primary" data-f onClick={() => push({ name: 'source-edit' })}>+ {t('settings.addSource')}</button>
+        <button className="btn" data-f onClick={() => push({ name: 'enroll' })}>📱 {t('enroll.fromPhone')}</button>
+        {!isTvMode() && (sources?.length || 0) > 0 && (
+          <button className="btn" data-f onClick={() => push({ name: 'send-to-tv' })}>📺 {t('enroll.sendTitle')}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** OpenSubtitles: free API key (opensubtitles.com → API consumers) + optional account for a higher quota */
+function OpenSubtitlesBox() {
+  const profile = useApp((s) => s.profile)!;
+  const [has, setHas] = useState<boolean | null>(null);
+  const [key, setKey] = useState('');
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const [state, setState] = useState<'idle' | 'busy' | 'ok' | 'key' | 'account'>('idle');
+  useEffect(() => void hasOsKey(profile.id).then(setHas), [profile.id]);
+  const save = async () => {
+    setState('busy');
+    const r = await validateOs(key.trim(), user.trim() || undefined, pass || undefined);
+    setState(r);
+    if (r !== 'ok') return;
+    await secureSet(osKey(profile.id), key.trim());
+    await secureSet(osUserKey(profile.id), user.trim() || null);
+    await secureSet(osPassKey(profile.id), pass || null);
+    await setMeta(`os:token:${profile.id}`, null);
+    setKey('');
+    setPass('');
+    setHas(true);
+  };
+  const remove = async () => {
+    for (const k of [osKey, osUserKey, osPassKey]) await secureRemove(k(profile.id));
+    setHas(false);
+  };
+  return (
+    <div className="form" style={{ marginTop: 28 }}>
+      <h2>OpenSubtitles</h2>
+      <p className="muted" style={{ lineHeight: 1.5 }}>{t('os.text')}</p>
+      <div className={`status ${has ? 'ok' : ''}`}>{has ? t('os.set') : t('os.missing')}</div>
+      <div className="field">
+        <label>{t('os.key')}</label>
+        <input className="input" data-f type="password" value={key} onChange={(e) => (setKey(e.target.value), setState('idle'))} placeholder={has ? '••••••••••••' : ''} autoComplete="off" />
+        <span className="small dim">{t('os.keyHelp')}</span>
+      </div>
+      <div className="field">
+        <label>{t('os.user')}</label>
+        <input className="input" data-f value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" autoCapitalize="off" />
+      </div>
+      <div className="field">
+        <label>{t('os.pass')}</label>
+        <input className="input" data-f type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="new-password" />
+        <span className="small dim">{t('os.accountHelp')}</span>
+      </div>
+      <div className="btn-row">
+        <button className="btn primary" data-f disabled={!key.trim() || state === 'busy'} onClick={() => void save()}>{state === 'busy' ? t('common.testing') : t('common.save')}</button>
+        {has && <button className="btn danger" data-f onClick={() => void remove()}>{t('settings.tmdbRemove')}</button>}
+        {state === 'ok' && <span className="msg-ok">{t('os.ok')}</span>}
+        {state === 'key' && <span className="msg-ko">{t('os.badKey')}</span>}
+        {state === 'account' && <span className="msg-ko">{t('os.badAccount')}</span>}
+      </div>
     </div>
   );
 }
@@ -295,10 +363,45 @@ function SyncSection() {
       <h2>{t('settings.syncInterval')}</h2>
       <div className="seg" data-row>
         {[6, 12, 24, 48].map((h) => (
-          <button key={h} data-f className={settings.syncIntervalH === h ? 'on' : ''} onClick={() => update({ syncIntervalH: h })}>{t('settings.every', { n: h })}</button>
+          <button key={h} data-f className={settings.syncIntervalH === h ? 'on' : ''} onClick={() => (update({ syncIntervalH: h }), void schedulePrefetch(profile.id))}>{t('settings.every', { n: h })}</button>
         ))}
       </div>
+      {isNative && <PrefetchBox />}
     </div>
+  );
+}
+
+/** Android WorkManager pre-download: catalogues and guides fetched while the app is closed */
+function PrefetchBox() {
+  const profile = useApp((s) => s.profile)!;
+  const settings = useApp((s) => s.settings);
+  const update = useApp((s) => s.updateSettings);
+  const [st, setSt] = useState<Awaited<ReturnType<typeof CyberNative.prefetchStatus>> | null>(null);
+  const refresh = () => void CyberNative.prefetchStatus().then(setSt).catch(() => {});
+  useEffect(refresh, []);
+  const set = (p: Partial<typeof settings>) => {
+    update(p);
+    void schedulePrefetch(profile.id).then(refresh);
+  };
+  return (
+    <>
+      <h2>{t('prefetch.title')}</h2>
+      <Toggle label={t('prefetch.on')} sub={t('prefetch.sub')} on={settings.prefetch} onChange={(v) => set({ prefetch: v })} />
+      {settings.prefetch && <Toggle label={t('prefetch.wifi')} on={settings.prefetchWifiOnly} onChange={(v) => set({ prefetchWifiOnly: v })} />}
+      {settings.prefetch && (
+        <div className="card-box">
+          <div className="small">
+            {st?.lastOkAt ? t('prefetch.last', { date: `${fmtDate(st.lastOkAt, { day: 'numeric', month: 'short' })} ${fmtTime(st.lastOkAt)}`, n: st.files }) : t('prefetch.never')}
+            {st?.errors ? <span className="msg-ko"> · {t('prefetch.errors', { n: st.errors })}</span> : null}
+          </div>
+          <div className="btn-row" style={{ marginTop: 10 }}>
+            <button className="btn small" data-f onClick={() => void schedulePrefetch(profile.id, true).then(() => setTimeout(refresh, 4000))}>
+              <IcRefresh /> {t('prefetch.now')}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

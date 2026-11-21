@@ -49,7 +49,10 @@ public class LocalProxy {
     private ServerSocket server;
     private int port;
 
+    private final File prefetchDir;
+
     public LocalProxy(File cacheDir) {
+        this.prefetchDir = new File(cacheDir, "prefetch");
         this.imgDir = new File(cacheDir, "img");
         //noinspection ResultOfMethodCallIgnored
         imgDir.mkdirs();
@@ -121,7 +124,8 @@ public class LocalProxy {
                 writeText(out, 400, "Bad Request", "missing u");
                 return;
             }
-            if ("/img".equals(path)) serveImage(out, u);
+            if ("/cached".equals(path)) serveCached(out, u, q.get("since"));
+            else if ("/img".equals(path)) serveImage(out, u);
             else if ("/proxy".equals(path)) proxy(out, u, headers.get("range"), q.get("ua"), "HEAD".equals(method));
             else writeText(out, 404, "Not Found", "not found");
         } catch (Exception e) {
@@ -181,6 +185,54 @@ public class LocalProxy {
             if (body != null) body.close();
             c.disconnect();
         }
+    }
+
+    /**
+     * Copy pre-downloaded by PrefetchWorker, if newer than `since` (ms): 200 + X-Fetched-At, else 404
+     * (the caller then uses the network as usual).
+     */
+    private void serveCached(OutputStream out, String url, String since) throws IOException {
+        String k = PrefetchWorker.key(url);
+        File body = new File(prefetchDir, k);
+        File meta = new File(prefetchDir, k + ".json");
+        if (!body.exists() || !meta.exists()) {
+            writeText(out, 404, "Not Found", "not prefetched");
+            return;
+        }
+        long fetchedAt;
+        String ct = "application/octet-stream";
+        try {
+            org.json.JSONObject m = new org.json.JSONObject(PrefetchWorker.readText(meta));
+            if (!url.equals(m.optString("url"))) {
+                writeText(out, 404, "Not Found", "not prefetched");
+                return;
+            }
+            fetchedAt = m.optLong("fetchedAt", 0);
+            ct = m.optString("contentType", ct);
+        } catch (Exception e) {
+            writeText(out, 404, "Not Found", "bad meta");
+            return;
+        }
+        long min = 0;
+        try {
+            if (since != null) min = Long.parseLong(since);
+        } catch (NumberFormatException ignored) {
+        }
+        if (fetchedAt <= min) {
+            writeText(out, 404, "Not Found", "stale");
+            return;
+        }
+        Map<String, String> h = new HashMap<>();
+        h.put("Content-Type", ct);
+        h.put("Cache-Control", "no-store");
+        h.put("X-Fetched-At", String.valueOf(fetchedAt));
+        writeHead(out, 200, "OK", h, body.length());
+        try (FileInputStream fis = new FileInputStream(body)) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = fis.read(buf)) > 0) out.write(buf, 0, n);
+        }
+        out.flush();
     }
 
     private void serveImage(OutputStream out, String url) throws IOException {

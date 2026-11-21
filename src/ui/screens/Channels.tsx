@@ -21,8 +21,8 @@ export function Channels() {
   const profile = useApp((s) => s.profile)!;
   const settings = useApp((s) => s.settings);
   const [menu, setMenu] = useState<Channel | null>(null);
-  const channels = useAsync(() => liveChannels(profile.id, { hideAdult: settings.hideAdult }), [profile.id]);
-  const favs = useAsync(() => favoritesOf(profile.id, 'live'), [profile.id, menu]);
+  const channels = useAsync(() => liveChannels(profile.id, { hideAdult: settings.hideAdult }), [profile.id], { key: `live:${profile.id}:${settings.hideAdult}` });
+  const favs = useAsync(() => favoritesOf(profile.id, 'live'), [profile.id, menu], { key: `favs:live:${profile.id}` });
   const groups = useMemo(() => {
     const m = new Map<Universe, Channel[]>();
     for (const c of channels || []) (m.get(c.universe) || m.set(c.universe, []).get(c.universe)!).push(c);

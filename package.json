@@ -1,7 +1,7 @@
 {
   "name": "cybertv",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -24,6 +24,7 @@
     "dexie-react-hooks": "^4.4.0",
     "hls.js": "^1.7.4",
     "mpegts.js": "^1.8.2",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "saxes": "^6.0.0",
@@ -43,6 +44,6 @@
   },
   "cyber": {
     "updateUrl": "https://github.com/pickywawa/cybertv/releases/latest/download/update.json",
-    "minNativeCode": 3
+    "minNativeCode": 4
   }
 }

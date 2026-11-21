@@ -317,6 +317,19 @@ function ParentalSection() {
         onChange={(v) => setPinFor(v ? 'set' : 'disable')}
       />
       <Toggle label={t('settings.hideAdult')} on={settings.hideAdult} onChange={(v) => (profile.parental.enabled && !v ? setPinFor('disable') : update({ hideAdult: v }))} />
+      {profile.parental.enabled && (
+        <div className="field">
+          <label>{t('settings.maxAge')}</label>
+          <div className="seg" data-row style={{ flexWrap: 'wrap' }}>
+            {[undefined, 10, 12, 16].map((a) => (
+              <button key={a ?? 'none'} data-f className={profile.parental.maxAge === a ? 'on' : ''} onClick={() => void patch({ parental: { ...profile.parental, maxAge: a } })}>
+                {a === undefined ? t('settings.maxAgeNone') : `-${a}`}
+              </button>
+            ))}
+          </div>
+          <span className="small dim">{t('settings.maxAgeHelp')}</span>
+        </div>
+      )}
       {pinFor === 'set' && (
         <PinPad setMode title={t('settings.parentalPin')} onClose={() => setPinFor(null)} onOk={(pin) => (void patch({ parental: { enabled: true, pin } }), setPinFor(null))} />
       )}

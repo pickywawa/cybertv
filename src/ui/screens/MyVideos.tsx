@@ -33,8 +33,8 @@ export function MyVideos() {
       )}
       {data.movies.length + data.series.length > 0 && (
         <Rail title={t('home.myList')}>
-          {data.movies.map((m) => <PosterCard key={m.id} title={m.title} image={m.poster} onClick={() => openMovie(m.id)} />)}
-          {data.series.map((s) => <PosterCard key={s.id} title={s.title} image={s.poster} onClick={() => openSeries(s.id)} />)}
+          {data.movies.map((m) => <PosterCard imdb={m.imdbRating} key={m.id} title={m.title} image={m.poster} onClick={() => openMovie(m.id)} />)}
+          {data.series.map((s) => <PosterCard imdb={s.imdbRating} key={s.id} title={s.title} image={s.poster} onClick={() => openSeries(s.id)} />)}
         </Rail>
       )}
       {data.hist.length > 0 && (

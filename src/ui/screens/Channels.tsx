@@ -37,7 +37,7 @@ export function Channels() {
       {favSet.size > 0 && (
         <Rail title={t('universe.favorites')}>
           {channels.filter((c) => favSet.has(c.groupKey)).map((c) => (
-            <LogoTile key={c.id} name={c.name} logo={c.logo} onClick={() => openChannel(c.id)} onLongPress={() => setMenu(c)} />
+            <LogoTile key={c.id} name={c.name} logo={[c.logo, c.logoAlt]} onClick={() => openChannel(c.id)} onLongPress={() => setMenu(c)} />
           ))}
         </Rail>
       )}
@@ -49,7 +49,7 @@ export function Channels() {
           </div>
           <div className="grid logos">
             {list.map((c) => (
-              <LogoTile key={c.id} name={c.name} logo={c.logo} onClick={() => openChannel(c.id)} onLongPress={() => setMenu(c)} />
+              <LogoTile key={c.id} name={c.name} logo={[c.logo, c.logoAlt]} onClick={() => openChannel(c.id)} onLongPress={() => setMenu(c)} />
             ))}
           </div>
         </section>
@@ -91,7 +91,7 @@ export function ChannelPage({ id }: { id: string }) {
         </div>
         <div className="content">
           <div style={{ height: 70, marginBottom: 16, maxWidth: 220, position: 'relative' }}>
-            <Img srcs={[ch.logo]} contain label={ch.name} alt={ch.name} eager />
+            <Img srcs={[ch.logo, ch.logoAlt]} contain label={ch.name} alt={ch.name} eager />
           </div>
           <div className="muted small">{t('channels.liveNow')}</div>
           <h1 style={{ fontSize: 'clamp(1.6rem,3vw,2.6rem)', margin: '6px 0' }}>{cur?.title || ch.name}</h1>
@@ -122,7 +122,7 @@ export function ChannelPage({ id }: { id: string }) {
       {upcoming.length > 0 && (
         <Rail title={t('channels.upNext')}>
           {upcoming.map((p) => (
-            <LandCard key={p.id ?? p.start} title={p.title} sub={`${fmtTime(p.start)} · ${p.category || ''}`} image={p.icon} centerLogo={ch.logo || ''} badge={fmtTime(p.start)} onClick={() => setSel(p)} />
+            <LandCard key={p.id ?? p.start} title={p.title} sub={`${fmtTime(p.start)} · ${p.category || ''}`} image={p.icon} centerLogo={[ch.logo, ch.logoAlt]} badge={fmtTime(p.start)} onClick={() => setSel(p)} />
           ))}
         </Rail>
       )}
@@ -130,7 +130,7 @@ export function ChannelPage({ id }: { id: string }) {
         [...byDay.entries()].slice(0, 7).map(([day, list]) => (
           <Rail key={day} title={`${t('tv.replay')} · ${day}`}>
             {list.map((p) => (
-              <LandCard key={p.id ?? p.start} title={p.title} sub={`${fmtTime(p.start)} – ${fmtTime(p.stop)}`} image={p.icon} centerLogo={ch.logo || ''} onClick={() => void playChannel(ch, { program: p, fromStart: true })} onLongPress={() => setSel(p)} />
+              <LandCard key={p.id ?? p.start} title={p.title} sub={`${fmtTime(p.start)} – ${fmtTime(p.stop)}`} image={p.icon} centerLogo={[ch.logo, ch.logoAlt]} onClick={() => void playChannel(ch, { program: p, fromStart: true })} onLongPress={() => setSel(p)} />
             ))}
           </Rail>
         ))

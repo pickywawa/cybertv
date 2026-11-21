@@ -4,19 +4,24 @@ import { useLongPress } from '../hooks';
 import { resizeTmdb } from '@/core/enrich/tmdb';
 import { IcClose } from '../icons';
 
+/** one url or a fallback chain (provider logo, then iptv-org's) */
+type Srcs = string | (string | undefined)[];
+const list = (x?: Srcs) => (Array.isArray(x) ? x : [x]);
+
 interface Base {
   onClick?: () => void;
   onLongPress?: () => void;
   autoFocus?: boolean;
 }
 
-export const PosterCard = memo(function PosterCard(p: Base & { title: string; sub?: string; image?: string; fallback?: string; badge?: string; progress?: number; hideMeta?: boolean }) {
+export const PosterCard = memo(function PosterCard(p: Base & { title: string; sub?: string; image?: string; fallback?: string; badge?: string; progress?: number; hideMeta?: boolean; imdb?: number }) {
   const ref = useLongPress<HTMLButtonElement>(() => p.onLongPress?.());
   return (
     <button ref={ref} className="card poster" data-f data-lp={p.onLongPress ? '' : undefined} data-autofocus={p.autoFocus || undefined} onClick={p.onClick} aria-label={p.title}>
       <div className="thumb">
         <Img srcs={[resizeTmdb(p.image, 'w342'), p.fallback]} label={p.title} alt={p.title} />
         {p.badge && <span className="badge">{p.badge}</span>}
+        {p.imdb ? <ImdbBadge rating={p.imdb} /> : null}
         {p.progress !== undefined && (
           <div className="progress">
             <i style={{ width: `${Math.min(100, Math.max(2, p.progress * 100))}%` }} />
@@ -40,7 +45,7 @@ export const LandCard = memo(function LandCard(
     sub2?: string;
     image?: string;
     fallbacks?: (string | undefined)[];
-    logo?: string;
+    logo?: Srcs;
     progress?: number;
     progressLight?: boolean;
     badge?: string;
@@ -48,7 +53,7 @@ export const LandCard = memo(function LandCard(
     action?: ReactNode;
     onRemove?: () => void;
     /** show this logo centered (no program artwork available) */
-    centerLogo?: string;
+    centerLogo?: Srcs;
   },
 ) {
   const ref = useLongPress<HTMLButtonElement>(() => p.onLongPress?.());
@@ -58,14 +63,14 @@ export const LandCard = memo(function LandCard(
         <div className="thumb">
           {p.centerLogo !== undefined && !p.image ? (
             <div className="logo-center">
-              <Img srcs={[p.centerLogo]} contain label={p.title} alt={p.title} />
+              <Img srcs={list(p.centerLogo)} contain label={p.title} alt={p.title} />
             </div>
           ) : (
             <Img srcs={[resizeTmdb(p.image, 'w780'), ...(p.fallbacks || [])]} label={p.title} alt={p.title} />
           )}
           {p.logo && (
             <span className="ch-logo-badge">
-              <Img srcs={[p.logo]} contain alt="" />
+              <Img srcs={list(p.logo)} contain alt="" />
             </span>
           )}
           {p.badge && <span className={`badge ${p.badgeLive ? 'live' : ''}`}>{p.badge}</span>}
@@ -119,11 +124,21 @@ export const Tile = memo(function Tile(p: Base & { label: string; sub?: string; 
   );
 });
 
-export const LogoTile = memo(function LogoTile(p: Base & { name: string; logo?: string }) {
+export const LogoTile = memo(function LogoTile(p: Base & { name: string; logo?: Srcs }) {
   const ref = useLongPress<HTMLButtonElement>(() => p.onLongPress?.());
   return (
     <button ref={ref} className="card logo-tile" data-f data-lp={p.onLongPress ? '' : undefined} onClick={p.onClick} aria-label={p.name} title={p.name}>
-      <Img srcs={[p.logo]} contain label={p.name} alt={p.name} />
+      <Img srcs={list(p.logo)} contain label={p.name} alt={p.name} />
     </button>
   );
 });
+
+/** IMDb rating tag (IMDb's yellow), on posters and detail pages */
+export function ImdbBadge({ rating, votes, inline }: { rating: number; votes?: number; inline?: boolean }) {
+  return (
+    <span className={`imdb ${inline ? 'inline' : ''}`} title={votes ? `${votes.toLocaleString()} votes` : undefined}>
+      <b>IMDb</b>
+      {rating.toFixed(1)}
+    </span>
+  );
+}

@@ -10,6 +10,7 @@ import { rewriteM3u8, isM3u8 } from '../src/core/net/m3u8Rewrite.ts';
  * - rewrites HLS playlists so every segment also goes through the proxy
  */
 const DEFAULT_UA = 'VLC/3.0.20 LibVLC/3.0.20';
+const WIKI_UA = 'CyberIPTV/1.0 (https://github.com/pickywawa/cybertv; IPTV player channel logos)';
 const proxify = (u: string) => `/proxy?u=${encodeURIComponent(u)}`;
 
 export function devProxyPlugin(): Plugin {
@@ -41,7 +42,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.statusCode = 400;
     return res.end('missing or invalid u');
   }
-  const headers: Record<string, string> = { 'user-agent': qs.get('ua') || DEFAULT_UA, accept: '*/*' };
+  // Wikimedia (iptv-org logos) throttles generic agents: identify the app as its policy asks
+  const ua = /(^|\.)wikimedia\.org$/i.test(new URL(target).hostname) ? WIKI_UA : qs.get('ua') || DEFAULT_UA;
+  const headers: Record<string, string> = { 'user-agent': ua, accept: '*/*' };
   if (req.headers.range) headers.range = String(req.headers.range);
   const ac = new AbortController();
   req.on('close', () => ac.abort());

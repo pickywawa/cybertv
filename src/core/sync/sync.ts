@@ -9,6 +9,7 @@ import {
 import { parseXmltv, type XmltvChannel } from '../epg/xmltv';
 import { channelCountry, channelLangs, detectLangs } from '../util/lang';
 import { serversOf, serverLabel } from '../sources/servers';
+import { IPTV_ORG, applyIptvOrg, refreshIptvOrg } from './iptvorg';
 
 export type Progress = (p: SyncProgress) => void;
 
@@ -26,14 +27,46 @@ async function bulkPutBatched<T>(table: { bulkPut(items: T[]): Promise<unknown> 
   for (let i = 0; i < rows.length; i += BATCH) await table.bulkPut(rows.slice(i, i + BATCH));
 }
 
-/** Remove rows of a source that disappeared from the provider */
-async function pruneStale(table: any, sourceId: string, keep: Set<string>) {
-  const ids: string[] = await table.where('sourceId').equals(sourceId).primaryKeys();
-  const stale = ids.filter((id) => !keep.has(id));
-  for (let i = 0; i < stale.length; i += BATCH) await table.bulkDelete(stale.slice(i, i + BATCH));
+/**
+ * Remove rows of a source that disappeared from the provider — unless the new list looks broken:
+ * an empty answer, or a big catalogue suddenly shrinking by more than 70 % (truncated download,
+ * rate-limited panel, error page…). Then the existing rows are kept and the next sync decides.
+ */
+/** a part of the catalogue could not be read: the rest is saved, existing data is kept */
+class PartialSync extends Error {
+  constructor(public what: string) {
+    super(`Liste des ${what} indisponible, catalogue précédent conservé`);
+  }
 }
 
-const ENRICH_FIELDS = ['poster', 'backdrop', 'logo', 'plot', 'rating', 'genres', 'cast', 'director', 'trailer', 'tmdbId', 'durationSec', 'year', 'enrichedAt', 'origLang'] as const;
+export function pruneLooksSafe(existing: number, incoming: number): boolean {
+  if (existing === 0) return true;
+  if (incoming === 0) return false;
+  return !(existing > 200 && incoming < existing * 0.3);
+}
+
+async function pruneStale(table: any, sourceId: string, keep: Set<string>): Promise<boolean> {
+  const ids: string[] = await table.where('sourceId').equals(sourceId).primaryKeys();
+  if (!pruneLooksSafe(ids.length, keep.size)) return false;
+  const stale = ids.filter((id) => !keep.has(id));
+  for (let i = 0; i < stale.length; i += BATCH) await table.bulkDelete(stale.slice(i, i + BATCH));
+  return true;
+}
+
+/** an Xtream list answer: an array of objects (a panel error is often `{}`, `{"user_info":…}` or HTML) */
+function xtreamList(v: unknown, idField: string): any[] | null {
+  const arr = Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v as object) : null;
+  if (!arr) return null;
+  const ok = arr.filter((x) => x && typeof x === 'object' && (x as any)[idField] !== undefined && (x as any)[idField] !== null);
+  // an object that isn't a list of items (error payload)
+  if (!Array.isArray(v) && arr.length && !ok.length) return null;
+  return ok;
+}
+
+const ENRICH_FIELDS = [
+  'poster', 'backdrop', 'logo', 'plot', 'rating', 'genres', 'cast', 'director', 'trailer', 'tmdbId', 'durationSec', 'year', 'enrichedAt', 'origLang',
+  'enrichV', 'imdbId', 'imdbRating', 'imdbVotes', 'cert', 'certAge', 'recos', 'people', 'collection',
+] as const;
 
 /** keep TMDB enrichment & first-seen date when a row is re-synced */
 async function mergeExisting<T extends Movie | Series>(table: any, sourceId: string, rows: T[], firstSync: boolean) {
@@ -80,7 +113,9 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
 
   // LIVE
   progress({ sourceId: src.id, step: 'live' });
-  const [lcats, lstreams] = await Promise.all([x.liveCategories(), x.liveStreams()]);
+  const [lcats, lstreamsRaw] = await Promise.all([x.liveCategories(), x.liveStreams()]);
+  const lstreams = xtreamList(lstreamsRaw, 'stream_id');
+  if (!lstreams) throw new Error('Liste des chaînes invalide');
   const cats = new Map<string, Category>();
   const catRows: Category[] = [];
   const rawCat = new Map<string, string>();
@@ -93,7 +128,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     cats.set(row.id, row);
     catRows.push(row);
   });
-  const channels: Channel[] = asArray<any>(lstreams)
+  const channels: Channel[] = lstreams
     .filter((s) => !s.stream_type || s.stream_type === 'live' || s.stream_type === 'created_live')
     .map((s, i) => {
       const categoryId = `${src.id}:lc:${s.category_id}`;
@@ -117,14 +152,17 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
 
   // VOD
   progress({ sourceId: src.id, step: 'vod' });
-  const [vcats, vstreams] = await Promise.all([x.vodCategories().catch(() => []), x.vodStreams().catch(() => [])]);
+  // a failed or invalid answer skips movies for this sync (never "zero movies": that would wipe them)
+  const [vcats, vstreamsRaw] = await Promise.all([x.vodCategories().catch(() => []), x.vodStreams().catch(() => null)]);
+  const vstreams = xtreamList(vstreamsRaw, 'stream_id');
+  const vodOk = !!vstreams;
   const vcatRows: Category[] = asArray<any>(vcats).map((c, i) => ({
     id: `${src.id}:vc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'vod',
     name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
   }));
   const vcatMap = new Map(vcatRows.map((c) => [c.id, c]));
   const vcatRaw = new Map(asArray<any>(vcats).map((c) => [`${src.id}:vc:${c.category_id}`, String(c.category_name || '')]));
-  const movies: Movie[] = asArray<any>(vstreams).map((s) => {
+  const movies: Movie[] = (vstreams || []).map((s) => {
     const { title, year: y } = parseTitleYear(s.name || '');
     const year = num(s.year) || y;
     const tmdbId = num(s.tmdb) || num(s.tmdb_id);
@@ -139,22 +177,26 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
       langs: li.audio, subs: li.subs,
     } satisfies Movie;
   });
-  await mergeExisting(db.movies, src.id, movies, firstSync);
-  await bulkPutBatched(db.categories, vcatRows);
-  await bulkPutBatched(db.movies, movies);
-  await pruneStale(db.movies, src.id, new Set(movies.map((m) => m.id)));
-  progress({ sourceId: src.id, step: 'vod', count: movies.length });
+  if (vodOk) {
+    await mergeExisting(db.movies, src.id, movies, firstSync);
+    await bulkPutBatched(db.categories, vcatRows);
+    await bulkPutBatched(db.movies, movies);
+    await pruneStale(db.movies, src.id, new Set(movies.map((m) => m.id)));
+  }
+  progress({ sourceId: src.id, step: 'vod', count: vodOk ? movies.length : await db.movies.where('sourceId').equals(src.id).count() });
 
   // SERIES
   progress({ sourceId: src.id, step: 'series' });
-  const [scats, slist] = await Promise.all([x.seriesCategories().catch(() => []), x.series().catch(() => [])]);
+  const [scats, slistRaw] = await Promise.all([x.seriesCategories().catch(() => []), x.series().catch(() => null)]);
+  const slist = xtreamList(slistRaw, 'series_id');
+  const seriesOk = !!slist;
   const scatRows: Category[] = asArray<any>(scats).map((c, i) => ({
     id: `${src.id}:sc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'series',
     name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
   }));
   const scatMap = new Map(scatRows.map((c) => [c.id, c]));
   const scatRaw = new Map(asArray<any>(scats).map((c) => [`${src.id}:sc:${c.category_id}`, String(c.category_name || '')]));
-  const series: Series[] = asArray<any>(slist).map((s) => {
+  const series: Series[] = (slist || []).map((s) => {
     const { title, year: y } = parseTitleYear(s.name || '');
     const tmdbId = num(s.tmdb) || num(s.tmdb_id);
     const categoryId = `${src.id}:sc:${s.category_id}`;
@@ -171,12 +213,19 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
       langs: li.audio, subs: li.subs,
     } satisfies Series;
   });
-  await mergeExisting(db.series, src.id, series, firstSync);
-  await bulkPutBatched(db.categories, scatRows);
-  await bulkPutBatched(db.series, series);
-  await pruneStale(db.series, src.id, new Set(series.map((m) => m.id)));
-  await pruneStale(db.categories, src.id, new Set([...catRows, ...vcatRows, ...scatRows].map((c) => c.id)));
-  src.counts = { live: channels.length, vod: movies.length, series: series.length };
+  if (seriesOk) {
+    await mergeExisting(db.series, src.id, series, firstSync);
+    await bulkPutBatched(db.categories, scatRows);
+    await bulkPutBatched(db.series, series);
+    await pruneStale(db.series, src.id, new Set(series.map((m) => m.id)));
+  }
+  if (vodOk && seriesOk) await pruneStale(db.categories, src.id, new Set([...catRows, ...vcatRows, ...scatRows].map((c) => c.id)));
+  src.counts = {
+    live: channels.length,
+    vod: vodOk ? movies.length : await db.movies.where('sourceId').equals(src.id).count(),
+    series: seriesOk ? series.length : await db.series.where('sourceId').equals(src.id).count(),
+  };
+  if (!vodOk || !seriesOk) throw new PartialSync(!vodOk ? 'films' : 'séries');
   progress({ sourceId: src.id, step: 'series', count: series.length });
 }
 
@@ -451,6 +500,7 @@ export async function prefetchPlan(profileId: string, secrets: Record<string, st
     else urls.push(s.url);
   }
   urls.push(...(await epgUrlsForProfile(profileId, secrets)));
+  urls.push(IPTV_ORG.channels, IPTV_ORG.logos, IPTV_ORG.feeds);
   return [...new Set(urls)];
 }
 
@@ -467,6 +517,7 @@ export async function syncSource(src: Source, password: string | undefined, prog
   let ok = false;
   // use the background pre-downloaded copies when they are newer than what we have
   setPrefetchSince(src.lastSyncAt || 0);
+  let partial: { server: string; msg: string } | null = null;
   for (const [i, server] of servers.entries()) {
     src.url = server;
     if (i > 0) progress({ sourceId: src.id, step: 'start', message: `Serveur de secours : ${serverLabel(server)}` });
@@ -476,8 +527,15 @@ export async function syncSource(src: Source, password: string | undefined, prog
       ok = true;
       break;
     } catch (e) {
-      errors.push(`${serverLabel(server)} : ${(e as Error).message.replace(/ — .*$/, '')}`);
+      const msg = (e as Error).message.replace(/ — .*$/, '');
+      // channels saved but movies or series unreadable: a backup may do better, else keep this
+      if (e instanceof PartialSync && !partial) partial = { server, msg };
+      errors.push(`${serverLabel(server)} : ${msg}`);
     }
+  }
+  if (!ok && partial) {
+    ok = true;
+    src.url = partial.server;
   }
   setPrefetchSince(null);
   if (ok) {
@@ -493,6 +551,7 @@ export async function syncSource(src: Source, password: string | undefined, prog
     progress({ sourceId: src.id, step: 'error', message: src.lastError });
   }
   await db.sources.put(src);
+  if (ok) await applyIptvOrg(src.profileId).catch(() => 0);
   // screens and the catalogue index key off this
   if (ok) await setMeta(`catalog:version:${src.profileId}`, Date.now());
   return src;
@@ -501,6 +560,13 @@ export async function syncSource(src: Source, password: string | undefined, prog
 export async function syncProfile(profileId: string, secrets: Record<string, string | undefined>, progress: Progress, withEpg = true) {
   const sources = (await db.sources.where('profileId').equals(profileId).toArray()).filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
   for (const s of sources) await syncSource(s, secrets[s.id], progress);
+  // open channel database: logos, languages, countries (weekly download, applied after every sync)
+  try {
+    await refreshIptvOrg();
+    await applyIptvOrg(profileId);
+  } catch {
+    /* offline: next sync */
+  }
   if (withEpg) await syncEpg(profileId, secrets, progress);
   await db.profiles.update(profileId, { lastSyncAt: Date.now() });
   await setMeta(`catalog:version:${profileId}`, Date.now());

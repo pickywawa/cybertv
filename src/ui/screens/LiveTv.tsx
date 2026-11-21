@@ -15,6 +15,7 @@ import { isTvMode } from '@/core/platform';
 import { langPrefs, profileCountry } from '@/core/prefs';
 import { matchesLangs, rankChannels } from '@/core/channelRank';
 import { flagOf, langName } from '@/core/util/lang';
+import { liveEvents, matchEvent, scoreLabel, type LiveEvent } from '@/core/sports';
 
 const ORDER: Universe[] = ['sport', 'cinema', 'kids', 'news', 'series', 'docs', 'ent', 'music', 'other', 'adult'];
 type Cat = 'fav' | 'all' | Universe;
@@ -45,6 +46,8 @@ export function LiveTv() {
   const channels = useAsync(() => liveChannels(profile.id, { hideAdult }), [profile.id, hideAdult], { key: `live:${profile.id}:${hideAdult}` });
   const favs = useAsync(() => favoritesOf(profile.id, 'live'), [profile.id, menuFor], { key: `favs:live:${profile.id}` });
   const epg = useAsync(() => nowNext(), [minute], { epg: true, key: 'nownext' });
+  // live scores (ESPN public scoreboard), refreshed every minute with the programme data
+  const scores = useAsync(() => liveEvents(profileCountry(profile)).catch(() => [] as LiveEvent[]), [minute, profile.country], { key: `scores:${profile.country}` });
   const evening = useAsync(() => (mode === 'tonight' ? tonight(settings.tonightStartMin) : Promise.resolve(new Map<string, Program>())), [mode, settings.tonightStartMin], { epg: true });
 
   const favKeys = useMemo(() => new Set((favs || []).map((f) => f.key.replace(/^live:/, ''))), [favs]);
@@ -140,6 +143,7 @@ export function LiveTv() {
             render={(c) => (
               <ChannelCard
                 ch={c}
+                event={mode === 'now' && c.epgId ? matchEvent(epg?.get(c.epgId)?.now, scores || []) : undefined}
                 nn={c.epgId ? epg?.get(c.epgId) : undefined}
                 evening={mode === 'tonight' && c.epgId ? evening?.get(c.epgId) : undefined}
                 now={now}
@@ -164,7 +168,7 @@ export function LiveTv() {
   );
 }
 
-function ChannelCard({ ch, nn, evening, now, onPlay, onMenu }: { ch: Channel; nn?: NowNext; evening?: Program; now: number; onPlay: (p?: Program, fromStart?: boolean) => void; onMenu: () => void }) {
+function ChannelCard({ ch, nn, evening, now, onPlay, onMenu, event }: { ch: Channel; nn?: NowNext; evening?: Program; now: number; onPlay: (p?: Program, fromStart?: boolean) => void; onMenu: () => void; event?: LiveEvent }) {
   const p = evening || nn?.now;
   const progress = p && !evening ? (now - p.start) / (p.stop - p.start) : undefined;
   const sub = evening ? `${fmtTime(evening.start)} · ${evening.category || ch.name}` : p ? p.subTitle || p.category || ch.name : t('tv.noProgram');
@@ -173,10 +177,11 @@ function ChannelCard({ ch, nn, evening, now, onPlay, onMenu }: { ch: Channel; nn
       title={p?.title || ch.name}
       sub={sub}
       image={p?.icon}
-      centerLogo={ch.logo || ''}
-      logo={p?.icon ? ch.logo : undefined}
+      centerLogo={[ch.logo, ch.logoAlt]}
+      logo={p?.icon ? [ch.logo, ch.logoAlt] : undefined}
       progress={progress}
-      badge={evening ? fmtTime(evening.start) : undefined}
+      badge={event ? scoreLabel(event) : evening ? fmtTime(evening.start) : undefined}
+      badgeLive={event?.state === 'in'}
       onClick={() => onPlay(nn?.now)}
       onLongPress={onMenu}
       action={

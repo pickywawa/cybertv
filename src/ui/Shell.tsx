@@ -9,6 +9,7 @@ import { IcGrid, IcHome, IcLibrary, IcSearch, IcTv } from './icons';
 import { Home } from './screens/Home';
 import { PinPad } from './components/PinPad';
 import { UpdateBanner } from './components/UpdateBanner';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LiveTv } from './screens/LiveTv';
 
 const Search = lazy(() => import('./screens/Search').then((m) => ({ default: m.Search })));
@@ -71,6 +72,7 @@ export function Shell() {
       {!mobile && <TopNav tab={tab} setTab={setTab} solid={solid || !!route || tab !== 'home'} />}
       <div className={`page ${mobile ? '' : ''}`} ref={pageRef} key={tab} inert={route ? true : undefined}>
         {mobile && <MobileTop tab={tab} />}
+        <ErrorBoundary onReset={() => setTab('home')}>
         <Suspense fallback={<div className="empty"><div className="spinner big" style={{ margin: 'auto' }} /></div>}>
           {tab === 'home' && <Home />}
           {tab === 'search' && <Search />}
@@ -79,6 +81,7 @@ export function Shell() {
           {tab === 'myvideos' && <MyVideos />}
           {tab === 'settings' && <Settings />}
         </Suspense>
+        </ErrorBoundary>
       </div>
       {route && (
         <Suspense fallback={null}>

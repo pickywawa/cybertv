@@ -4,15 +4,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/state/store';
 import { t, fmtRuntime, fmtDuration } from '@/core/i18n';
 import { db } from '@/core/db';
-import { dedup, episodesOf, toggleFavorite } from '@/core/repo';
-import type { Episode, Movie, Series } from '@/core/types';
+import { availableByTmdb, dedupLang, episodesOf, toggleFavorite } from '@/core/repo';
+import type { Episode, Movie, Person, Series } from '@/core/types';
 import { resizeTmdb } from '@/core/enrich/tmdb';
 import { dataWorker } from '@/core/workers';
 import { useAsync } from '../hooks';
 import { Img } from '../components/Img';
 import { BackButton } from '../components/BackButton';
 import { Rail } from '../components/Rail';
-import { PosterCard } from '../components/Cards';
+import { ImdbBadge, PosterCard } from '../components/Cards';
 import { IcCheck, IcPlay, IcPlus, IcRestart, IcStar, IcVolume, IcVolumeOff } from '../icons';
 import { flagOf, type LangPrefs } from '@/core/util/lang';
 import { langPrefs } from '@/core/prefs';
@@ -22,7 +22,7 @@ import { loadXtreamEpisodesIfNeeded } from '../episodes';
 export function Detail({ kind, id }: { kind: 'movie' | 'series'; id: string }) {
   const item = useLiveQuery(() => (kind === 'movie' ? db.movies.get(id) : db.series.get(id)), [kind, id]);
   useEffect(() => {
-    if (item && !item.enrichedAt) prioritizeEnrichment(kind, [item]);
+    if (item) prioritizeEnrichment(kind, [item]);
   }, [item, kind]);
   if (item === undefined) return <div className="spinner big" style={{ margin: '30vh auto' }} />;
   if (!item) return <div className="empty">{t('common.empty')}</div>;
@@ -34,13 +34,88 @@ function Facts({ it, duration }: { it: Movie | Series; duration?: number }) {
     <div className="facts">
       {it.year && <span>{it.year}</span>}
       {duration ? <span>{fmtRuntime(duration)}</span> : null}
+      {it.certAge !== undefined || it.cert ? <AgePill age={it.certAge} cert={it.cert} /> : null}
+      {it.imdbRating ? <ImdbBadge rating={it.imdbRating} votes={it.imdbVotes} inline /> : null}
       {it.rating ? (
-        <span className="rating">
+        <span className="rating" title="TMDB">
           <IcStar width={14} height={14} style={{ verticalAlign: -2 }} /> {it.rating.toFixed(1)}
         </span>
       ) : null}
       {it.genres?.slice(0, 3).map((g) => <span key={g} className="pill">{g}</span>)}
     </div>
+  );
+}
+
+export function AgePill({ age, cert }: { age?: number; cert?: string }) {
+  if (age === undefined) return cert ? <span className="age-pill">{cert}</span> : null;
+  return (
+    <span className={`age-pill a${age}`} title={age ? t('age.min', { n: age }) : t('age.all')}>
+      {age === 0 ? t('age.allShort') : `-${age}`}
+    </span>
+  );
+}
+
+/** main cast, round photos → actor page */
+function CastRail({ people }: { people?: Person[] }) {
+  const push = useApp((s) => s.push);
+  if (!people?.length) return null;
+  return (
+    <Rail title={t('detail.cast')}>
+      {people.map((p) => (
+        <button key={p.id} className="card person-card" data-f onClick={() => push({ name: 'person', id: p.id, title: p.name })}>
+          <span className="ph-round">{p.photo ? <Img srcs={[p.photo]} label={p.name} alt={p.name} /> : <span className="ini">{p.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}</span>}</span>
+          <span className="nm ellipsis">{p.name}</span>
+          {p.character && <span className="ch ellipsis">{p.character}</span>}
+        </button>
+      ))}
+    </Rail>
+  );
+}
+
+/** TMDB recommendations available in the catalogue; same-genre titles when there are too few */
+function useRecommendations(kind: 'movie' | 'series', it: Movie | Series) {
+  const profile = useApp((s) => s.profile)!;
+  return useAsync(async () => {
+    const prefs = langPrefs(profile);
+    const recos = (await availableByTmdb(profile.id, kind, it.recos || [], prefs)).filter((x) => x.groupKey !== it.groupKey);
+    if (recos.length >= 3) return { title: t('detail.recommended'), items: recos.slice(0, 24) };
+    const g = it.genres?.[0];
+    if (!g) return { title: t('detail.recommended'), items: recos };
+    const table = kind === 'movie' ? db.movies : db.series;
+    const rows = await (table as typeof db.movies).where('profileId').equals(profile.id).filter((x) => x.groupKey !== it.groupKey && !!x.genres?.includes(g)).limit(80).toArray();
+    const more = dedupLang(rows, prefs).sort((a, b) => (b.imdbRating || b.rating || 0) - (a.imdbRating || a.rating || 0));
+    const seen = new Set(recos.map((x) => x.groupKey));
+    return { title: recos.length ? t('detail.recommended') : t('detail.similar'), items: [...recos, ...more.filter((x) => !seen.has(x.groupKey))].slice(0, 24) };
+  }, [kind, it.id, it.recos?.join(), it.genres?.join()]);
+}
+
+/** other films of the saga that are in the catalogue, in release order */
+function SagaRail({ m }: { m: Movie }) {
+  const profile = useApp((s) => s.profile)!;
+  const data = useAsync(async () => {
+    if (!m.collection) return null;
+    const col = await dataWorker().tmdbCollection(m.collection.id);
+    if (!col) return null;
+    const parts = [...col.parts].sort((a, b) => (a.year || 9999) - (b.year || 9999));
+    const items = await availableByTmdb(profile.id, 'movie', parts.map((p) => p.tmdbId), langPrefs(profile));
+    // position in the whole saga (some parts may be missing from the catalogue)
+    const pos = new Map(parts.map((p, i) => [p.tmdbId, i + 1]));
+    return { name: col.name, items, total: parts.length, pos };
+  }, [m.collection?.id]);
+  if (!data || data.items.length < 2) return null;
+  return (
+    <Rail title={`${t('detail.saga')} · ${data.name}`}>
+      {data.items.map((x) => (
+        <PosterCard
+          imdb={x.imdbRating}
+          key={x.id}
+          title={x.title}
+          sub={[x.year, x.groupKey === m.groupKey ? t('detail.thisOne') : `${data.pos?.get(x.tmdbId!) ?? '?'}/${data.total}`].filter(Boolean).join(' · ')}
+          image={x.poster}
+          onClick={() => (x.groupKey === m.groupKey ? undefined : openMovie(x.id))}
+        />
+      ))}
+    </Rail>
   );
 }
 
@@ -226,12 +301,7 @@ function MovieDetail({ m }: { m: Movie }) {
   const progress = useLiveQuery(() => db.watch.get([profile.id, `movie:${m.id}`]), [profile.id, m.id]);
   const [fav, toggleFav] = useFav('movie', m);
   const variants = useAsync(() => db.movies.where('groupKey').equals(m.groupKey).count(), [m.groupKey]);
-  const similar = useAsync(async () => {
-    const g = m.genres?.[0];
-    if (!g) return [];
-    const rows = await db.movies.where('profileId').equals(profile.id).filter((x) => x.groupKey !== m.groupKey && !!x.genres?.includes(g)).limit(60).toArray();
-    return dedup(rows).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 24);
-  }, [m.id, m.genres?.join()]);
+  const recos = useRecommendations('movie', m);
   const canResume = progress && !progress.completed && progress.positionSec > 60;
   const langs = useGroupLangs('movie', m);
 
@@ -274,9 +344,11 @@ function MovieDetail({ m }: { m: Movie }) {
           {variants && variants > 1 ? <div>{t('detail.sources', { n: variants })}</div> : null}
         </div>
       </HeroBlock>
-      {similar && similar.length > 2 && (
-        <Rail title={t('detail.similar')}>
-          {similar.map((x) => <PosterCard key={x.id} title={x.title} sub={x.year ? String(x.year) : undefined} image={x.poster} onClick={() => openMovie(x.id)} />)}
+      <SagaRail m={m} />
+      <CastRail people={m.people} />
+      {recos && recos.items.length > 2 && (
+        <Rail title={recos.title}>
+          {recos.items.map((x) => <PosterCard imdb={x.imdbRating} key={x.id} title={x.title} sub={x.year ? String(x.year) : undefined} image={x.poster} onClick={() => openMovie(x.id)} />)}
         </Rail>
       )}
     </div>
@@ -306,12 +378,8 @@ function SeriesDetail({ s }: { s: Series }) {
     if (s.tmdbId && curSeason !== undefined) void dataWorker().enrichSeason(s.id, curSeason);
   }, [s.id, s.tmdbId, curSeason]);
 
-  const similar = useAsync(async () => {
-    const g = s.genres?.[0];
-    if (!g) return [];
-    const rows = await db.series.where('profileId').equals(profile.id).filter((x) => x.groupKey !== s.groupKey && !!x.genres?.includes(g)).limit(40).toArray();
-    return dedup(rows).slice(0, 24);
-  }, [s.id]);
+  const recos = useRecommendations('series', s);
+  const similar = recos?.items;
 
   const resumeTarget: { ep: Episode; at: number } | null = useMemo(() => {
     if (!episodes?.length) return null;
@@ -402,9 +470,10 @@ function SeriesDetail({ s }: { s: Series }) {
       )}
       {tab === 'similar' && similar && (
         <div className="grid posters" style={{ marginTop: 16 }}>
-          {similar.map((x) => <PosterCard key={x.id} title={x.title} image={x.poster} onClick={() => openSeries(x.id)} />)}
+          {similar.map((x) => <PosterCard imdb={x.imdbRating} key={x.id} title={x.title} image={x.poster} onClick={() => openSeries(x.id)} />)}
         </div>
       )}
+      <CastRail people={s.people} />
     </div>
   );
 }

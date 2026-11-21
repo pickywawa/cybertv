@@ -17,7 +17,8 @@ export interface Profile {
   /** optional profile lock */
   pin?: string;
   /** parental control for the Adult universe */
-  parental: { enabled: boolean; pin?: string };
+  /** maxAge: titles rated above it need the PIN (undefined = no age limit) */
+  parental: { enabled: boolean; pin?: string; maxAge?: number };
   hasTmdb: boolean;
   /** ISO 3166 country (channel ranking, TMDB region) */
   country?: string;
@@ -94,8 +95,11 @@ export interface Channel {
   url?: string;
   /** audio languages detected from the name / category / EPG id */
   langs?: string[];
-  /** ISO country guessed from prefix / EPG id */
+  /** ISO country guessed from prefix / EPG id (or iptv-org) */
   country?: string;
+  /** iptv-org database match + its logo when the provider already has one (used as fallback) */
+  iptvId?: string;
+  logoAlt?: string;
 }
 
 export interface Movie {
@@ -131,6 +135,27 @@ export interface Movie {
   origLang?: string;
   /** set when langs/subs come from the actual stream tracks */
   tracksAt?: number;
+  /** TMDB extras (enrichment v2) */
+  enrichV?: number;
+  imdbId?: string;
+  imdbRating?: number;
+  imdbVotes?: number;
+  /** age rating as shown in the country ("12", "16", "PG-13"…) and its minimum age */
+  cert?: string;
+  certAge?: number;
+  /** TMDB recommendations (tmdb ids), filtered against the catalogue when shown */
+  recos?: number[];
+  /** main cast with TMDB person ids and photos */
+  people?: Person[];
+  /** saga (TMDB collection) */
+  collection?: { id: number; name: string };
+}
+
+export interface Person {
+  id: number;
+  name: string;
+  character?: string;
+  photo?: string;
 }
 
 export interface Series {
@@ -159,6 +184,18 @@ export interface Series {
   langs?: string[];
   subs?: string[];
   origLang?: string;
+  /** TMDB extras (enrichment v2) */
+  enrichV?: number;
+  imdbId?: string;
+  imdbRating?: number;
+  imdbVotes?: number;
+  /** age rating as shown in the country ("12", "16", "PG-13"…) and its minimum age */
+  cert?: string;
+  certAge?: number;
+  /** TMDB recommendations (tmdb ids), filtered against the catalogue when shown */
+  recos?: number[];
+  /** main cast with TMDB person ids and photos */
+  people?: Person[];
 }
 
 export interface Episode {

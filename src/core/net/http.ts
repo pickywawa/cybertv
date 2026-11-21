@@ -74,7 +74,16 @@ async function prefetched(url: string): Promise<Response | null> {
 }
 
 export async function fetchJson<T>(url: string, timeoutMs = 45000): Promise<T> {
-  const res = (await prefetched(url)) || (await fetchWithTimeout(url, { timeoutMs }));
+  const local = await prefetched(url);
+  if (local) {
+    // a pre-downloaded copy that doesn't parse (cut download, error page) is ignored
+    try {
+      return JSON.parse(await local.text()) as T;
+    } catch {
+      /* fall back to the network */
+    }
+  }
+  const res = await fetchWithTimeout(url, { timeoutMs });
   const text = await res.text();
   try {
     return JSON.parse(text) as T;

@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { cleanName, hashColor, initials } from '@/core/util/text';
-import { imgUrl } from '@/core/images';
+import { analysableLogoUrl, analyseLogo, imgUrl, knownTone, type LogoTone } from '@/core/images';
 
 interface Props {
   srcs: (string | undefined | null)[];
@@ -35,6 +35,9 @@ function ImgInner({ list: all, alt = '', label, className, contain, eager }: Pro
   const [loaded, setLoaded] = useState(() => !!list[0] && LOADED.has(list[0]));
   const src = list[0];
   const known = !!src && LOADED.has(src);
+  // logos: brightness check (dark logos are lightened on dark themes)
+  const corsUrl = contain && src ? analysableLogoUrl(src) : null;
+  const [tone, setTone] = useState<LogoTone | undefined>(() => (src ? knownTone(src) : undefined));
   if (!src) {
     const l = label || alt || '?';
     // logo slots (contain) get a designed name tile instead of a generic placeholder
@@ -51,15 +54,17 @@ function ImgInner({ list: all, alt = '', label, className, contain, eager }: Pro
   return (
     <img
       key={src}
-      className={className}
-      src={imgUrl(src)}
+      className={[className, tone && tone !== 'ok' ? `logo-${tone}` : ''].filter(Boolean).join(' ') || undefined}
+      src={corsUrl || imgUrl(src)}
+      crossOrigin={corsUrl ? 'anonymous' : undefined}
       alt={alt}
       loading={eager || known ? 'eager' : 'lazy'}
       decoding="async"
       draggable={false}
       style={{ objectFit: contain ? 'contain' : undefined, opacity: loaded || known ? 1 : 0, transition: known ? undefined : 'opacity .2s' }}
-      onLoad={() => {
+      onLoad={(e) => {
         LOADED.add(src);
+        if (corsUrl && tone === undefined) setTone(analyseLogo(src, e.currentTarget));
         setLoaded(true);
       }}
       onError={() => {

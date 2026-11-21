@@ -440,3 +440,18 @@ export async function deleteSourceData(sourceId: string) {
 }
 
 export type { Universe };
+
+/** catalogue titles matching TMDB ids, in the given order (best language variant per title) */
+export async function availableByTmdb<K extends 'movie' | 'series'>(
+  profileId: string,
+  kind: K,
+  tmdbIds: number[],
+  prefs?: LangPrefs,
+): Promise<(K extends 'movie' ? Movie : Series)[]> {
+  if (!tmdbIds.length) return [];
+  const table = kind === 'movie' ? db.movies : db.series;
+  const rows = (await (table as typeof db.movies).where('tmdbId').anyOf(tmdbIds).toArray()).filter((x) => x.profileId === profileId);
+  const best = dedupLang(rows as Movie[], prefs);
+  const byId = new Map(best.map((x) => [x.tmdbId!, x]));
+  return tmdbIds.map((id) => byId.get(id)).filter(Boolean) as never;
+}

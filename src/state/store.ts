@@ -15,6 +15,7 @@ export type Route =
   | { name: 'profiles' }
   | { name: 'profile-edit'; profileId?: string }
   | { name: 'enroll' }
+  | { name: 'person'; id: number; title: string }
   | { name: 'send-to-tv'; target?: string };
 
 export type SettingsSection = 'sources' | 'services' | 'appearance' | 'player' | 'parental' | 'sync' | 'categories' | 'about';

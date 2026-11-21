@@ -59,8 +59,9 @@ export function Grid({ kind, title, filter }: { kind: 'movie' | 'series'; title:
             getKey={(x) => x.id}
             render={(x) => (
               <PosterCard
+                imdb={x.imdbRating}
                 title={x.title}
-                sub={[x.year, x.rating ? `★ ${x.rating.toFixed(1)}` : null].filter(Boolean).join(' · ')}
+                sub={[x.year, x.genres?.[0]].filter(Boolean).join(' · ')}
                 image={x.poster}
                 onClick={() => (kind === 'movie' ? openMovie(x.id) : openSeries(x.id))}
               />

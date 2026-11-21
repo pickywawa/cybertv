@@ -2,14 +2,30 @@ import { db } from '@/core/db';
 import type { Channel, Program, WatchState } from '@/core/types';
 import { playChannelRequest, playEpisodeRequest, playMovieRequest } from '@/core/playback';
 import { useApp } from '@/state/store';
+import { t } from '@/core/i18n';
 import { dataWorker } from '@/core/workers';
 import { loadXtreamEpisodesIfNeeded } from './episodes';
+import { needsEnrich } from '@/core/enrich/enrich';
+
+/**
+ * Parental control by age: a title rated above the profile's limit asks for the PIN first
+ * (once unlocked, the session stays unlocked like for adult channels).
+ */
+async function ageGate(kind: 'movie' | 'series', id: string, go: () => void) {
+  const st = useApp.getState();
+  const par = st.profile?.parental;
+  if (!par?.enabled || par.maxAge === undefined || st.unlockedAdult) return go();
+  const it = kind === 'movie' ? await db.movies.get(id) : await db.series.get(id);
+  if (it?.certAge === undefined || it.certAge <= par.maxAge) return go();
+  st.toast(t('age.locked', { n: it.certAge }));
+  window.dispatchEvent(new CustomEvent('cyber:pin', { detail: go }));
+}
 
 export function openMovie(id: string) {
-  useApp.getState().push({ name: 'movie', id });
+  void ageGate('movie', id, () => useApp.getState().push({ name: 'movie', id }));
 }
 export function openSeries(id: string) {
-  useApp.getState().push({ name: 'series', id });
+  void ageGate('series', id, () => useApp.getState().push({ name: 'series', id }));
 }
 export function openChannel(id: string) {
   useApp.getState().push({ name: 'channel', id });
@@ -26,15 +42,19 @@ export async function playChannel(ch: Channel, opts: { program?: Program; fromSt
 }
 
 export async function playMovie(id: string, startAt?: number) {
-  const m = await db.movies.get(id);
-  if (!m) return;
-  useApp.getState().play(await playMovieRequest(m, startAt));
+  await ageGate('movie', id, async () => {
+    const m = await db.movies.get(id);
+    if (!m) return;
+    useApp.getState().play(await playMovieRequest(m, startAt));
+  });
 }
 
 export async function playEpisode(seriesId: string, episodeId: string, startAt?: number) {
-  const [s, e] = await Promise.all([db.series.get(seriesId), db.episodes.get(episodeId)]);
-  if (!s || !e) return;
-  useApp.getState().play(await playEpisodeRequest(s, e, startAt));
+  await ageGate('series', seriesId, async () => {
+    const [s, e] = await Promise.all([db.series.get(seriesId), db.episodes.get(episodeId)]);
+    if (!s || !e) return;
+    useApp.getState().play(await playEpisodeRequest(s, e, startAt));
+  });
 }
 
 export async function resume(w: WatchState) {
@@ -45,7 +65,7 @@ export async function resume(w: WatchState) {
   }
 }
 
-export function prioritizeEnrichment(kind: 'movie' | 'series', items: { id: string; enrichedAt?: number }[]) {
-  const ids = items.filter((x) => !x.enrichedAt).map((x) => x.id);
+export function prioritizeEnrichment(kind: 'movie' | 'series', items: { id: string; enrichedAt?: number; enrichV?: number; tmdbId?: number }[]) {
+  const ids = items.filter(needsEnrich).map((x) => x.id);
   if (ids.length) void dataWorker().prioritize(kind, ids);
 }

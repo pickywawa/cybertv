@@ -7,7 +7,6 @@ import type { SearchHit } from '@/core/search';
 import type { Channel, Movie, Program, Series } from '@/core/types';
 import { isNative } from '@/core/platform';
 import { CyberNative } from '@/core/native';
-import { norm } from '@/core/util/text';
 import { sortByLang } from '@/core/util/lang';
 import { langPrefs } from '@/core/prefs';
 import { dedupLang } from '@/core/repo';
@@ -24,6 +23,14 @@ interface Results {
   programs: { p: Program; ch: Channel }[];
 }
 
+/** results of recent queries (typing back / reopening the tab is instant) */
+const RESULTS = new Map<string, Results>();
+function rememberResults(key: string, r: Results) {
+  RESULTS.delete(key);
+  RESULTS.set(key, r);
+  if (RESULTS.size > 30) RESULTS.delete(RESULTS.keys().next().value!);
+}
+
 type SpeechRec = { lang: string; interimResults: boolean; start(): void; stop(): void; onresult: (e: any) => void; onend: () => void; onerror: () => void };
 
 export function Search() {
@@ -38,36 +45,54 @@ export function Search() {
   const [prog, setProg] = useState<{ p: Program; ch: Channel } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const epgVersion = useApp((s) => s.epgVersion);
   useEffect(() => {
     const query = q.trim();
     if (query.length < 2) {
       setRes(null);
       return;
     }
+    // same query seen earlier in the session: instant, refreshed below
+    const memo = RESULTS.get(`${profile.id}|${settings.hideAdult}|${query}`);
+    if (memo) setRes(memo);
     setBusy(true);
+    let alive = true;
     const tm = setTimeout(async () => {
       const version = (await getMeta<number>(`catalog:version:${profile.id}`)) || 0;
       const hits: SearchHit[] = await searchWorker().search(profile.id, version, query);
+      if (!alive) return;
       const ids = (k: SearchHit['kind']) => hits.filter((h) => h.kind === k).map((h) => h.id);
       const [channels, movies, series] = await Promise.all([db.channels.bulkGet(ids('live')), db.movies.bulkGet(ids('movie')), db.series.bulkGet(ids('series'))]);
-      // EPG programmes (now → +24h) matching the query
-      const nq = norm(query);
-      const progRows = await db.programs.where('start').between(Date.now() - 3 * 3600000, Date.now() + 24 * 3600000).filter((p) => p.stop > Date.now() && norm(p.title).includes(nq)).limit(40).toArray();
-      const epgIds = [...new Set(progRows.map((p) => p.epgId))];
-      const chs = await db.channels.where('epgId').anyOf(epgIds).filter((c) => c.profileId === profile.id).toArray();
-      const chByEpg = new Map(chs.map((c) => [c.epgId!, c]));
+      if (!alive) return;
       const hide = (u: string) => settings.hideAdult && u === 'adult';
       const prefs = langPrefs(profile);
-      setRes({
+      // titles first: shown as soon as they're known
+      const base: Results = {
         channels: sortByLang((channels.filter(Boolean) as Channel[]).filter((c) => !hide(c.universe)), prefs),
         movies: dedupLang((movies.filter(Boolean) as Movie[]).filter((c) => !hide(c.universe)), prefs),
         series: dedupLang((series.filter(Boolean) as Series[]).filter((c) => !hide(c.universe)), prefs),
-        programs: progRows.filter((p) => chByEpg.has(p.epgId)).sort((a, b) => a.start - b.start).map((p) => ({ p, ch: chByEpg.get(p.epgId)! })),
-      });
+        programs: memo?.programs || [],
+      };
+      setRes(base);
       setBusy(false);
-    }, 160);
-    return () => clearTimeout(tm);
-  }, [q, profile.id, settings.hideAdult]);
+      rememberResults(`${profile.id}|${settings.hideAdult}|${query}`, base);
+      // then TV programmes (separate index in the search worker)
+      const progIds = await searchWorker().searchPrograms(query, epgVersion);
+      if (!alive) return;
+      const progRows = (await db.programs.bulkGet(progIds)).filter(Boolean) as Program[];
+      const epgIds = [...new Set(progRows.map((p) => p.epgId))];
+      const chs = epgIds.length ? await db.channels.where('epgId').anyOf(epgIds).filter((c) => c.profileId === profile.id).toArray() : [];
+      const chByEpg = new Map(chs.map((c) => [c.epgId!, c]));
+      const full: Results = { ...base, programs: progRows.filter((p) => chByEpg.has(p.epgId)).map((p) => ({ p, ch: chByEpg.get(p.epgId)! })) };
+      if (!alive) return;
+      rememberResults(`${profile.id}|${settings.hideAdult}|${query}`, full);
+      setRes(full);
+    }, memo ? 60 : 120);
+    return () => {
+      alive = false;
+      clearTimeout(tm);
+    };
+  }, [q, profile.id, settings.hideAdult, epgVersion]);
 
   useEffect(() => {
     if (res) {
@@ -156,20 +181,20 @@ export function Search() {
         <section className="rail">
           <div className="rail-head"><h2 className="section-title">{t('search.movies')} & {t('search.series')}</h2></div>
           <div className="grid posters">
-            {res.series.slice(0, 18).map((s) => <PosterCard key={s.id} title={s.title} sub={t('search.series')} image={s.poster} onClick={() => openSeries(s.id)} />)}
-            {res.movies.slice(0, 60).map((m) => <PosterCard key={m.id} title={m.title} sub={m.year ? String(m.year) : undefined} image={m.poster} onClick={() => openMovie(m.id)} />)}
+            {res.series.slice(0, 18).map((s) => <PosterCard imdb={s.imdbRating} key={s.id} title={s.title} sub={t('search.series')} image={s.poster} onClick={() => openSeries(s.id)} />)}
+            {res.movies.slice(0, 60).map((m) => <PosterCard imdb={m.imdbRating} key={m.id} title={m.title} sub={m.year ? String(m.year) : undefined} image={m.poster} onClick={() => openMovie(m.id)} />)}
           </div>
         </section>
       )}
       {res && res.channels.length > 0 && (
         <Rail title={t('search.channels')}>
-          {res.channels.slice(0, 30).map((c) => <LogoTile key={c.id} name={c.name} logo={c.logo} onClick={() => void playChannel(c)} onLongPress={() => openChannel(c.id)} />)}
+          {res.channels.slice(0, 30).map((c) => <LogoTile key={c.id} name={c.name} logo={[c.logo, c.logoAlt]} onClick={() => void playChannel(c)} onLongPress={() => openChannel(c.id)} />)}
         </Rail>
       )}
       {res && res.programs.length > 0 && (
         <Rail title={t('search.programs')}>
           {res.programs.map(({ p, ch }) => (
-            <LandCard key={`${p.epgId}${p.start}`} title={p.title} sub={`${ch.name} · ${fmtTime(p.start)}`} image={p.icon} centerLogo={ch.logo || ''} onClick={() => setProg({ p, ch })} />
+            <LandCard key={`${p.epgId}${p.start}`} title={p.title} sub={`${ch.name} · ${fmtTime(p.start)}`} image={p.icon} centerLogo={[ch.logo, ch.logoAlt]} onClick={() => setProg({ p, ch })} />
           ))}
         </Rail>
       )}

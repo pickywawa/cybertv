@@ -174,8 +174,8 @@ export function Home() {
       <MovieRail title={t('home.mustSee')} items={data.mustSee} onAll={() => push({ name: 'grid', kind: 'movie', title: t('home.mustSee'), filter: { sort: 'rating' } })} />
       {(data.favMovies.length > 0 || data.favSeries.length > 0) && (
         <Rail title={t('home.myList')}>
-          {data.favMovies.map((m) => <PosterCard key={m.id} title={m.title} sub={m.year ? String(m.year) : undefined} image={m.poster} onClick={() => open('movie', m.id)} />)}
-          {data.favSeries.map((s) => <PosterCard key={s.id} title={s.title} image={s.poster} onClick={() => open('series', s.id)} />)}
+          {data.favMovies.map((m) => <PosterCard imdb={m.imdbRating} key={m.id} title={m.title} sub={m.year ? String(m.year) : undefined} image={m.poster} onClick={() => open('movie', m.id)} />)}
+          {data.favSeries.map((s) => <PosterCard imdb={s.imdbRating} key={s.id} title={s.title} image={s.poster} onClick={() => open('series', s.id)} />)}
         </Rail>
       )}
       <MovieRail title={t('home.kids')} items={data.kids} onAll={() => push({ name: 'grid', kind: 'movie', title: t('home.kids'), filter: { universe: 'kids' } })} />
@@ -192,7 +192,7 @@ function MovieRail({ title, items, onAll }: { title: string; items: Movie[]; onA
   return (
     <Rail title={title} onSeeAll={onAll} seeAllLabel={t('common.all')}>
       {items.slice(0, 30).map((m) => (
-        <PosterCard key={m.id} title={m.title} sub={[m.year, m.genres?.[0]].filter(Boolean).join(' · ')} image={m.poster} fallback={resizeTmdb(m.backdrop, 'w780')} onClick={() => openMovie(m.id)} onLongPress={() => void playMovie(m.id)} />
+        <PosterCard imdb={m.imdbRating} key={m.id} title={m.title} sub={[m.year, m.genres?.[0]].filter(Boolean).join(' · ')} image={m.poster} fallback={resizeTmdb(m.backdrop, 'w780')} onClick={() => openMovie(m.id)} onLongPress={() => void playMovie(m.id)} />
       ))}
     </Rail>
   );
@@ -203,7 +203,7 @@ function SeriesRail({ title, items, onAll }: { title: string; items: Series[]; o
   return (
     <Rail title={title} onSeeAll={onAll} seeAllLabel={t('common.all')}>
       {items.slice(0, 30).map((s) => (
-        <PosterCard key={s.id} title={s.title} sub={[s.year, s.genres?.[0]].filter(Boolean).join(' · ')} image={s.poster} fallback={resizeTmdb(s.backdrop, 'w780')} onClick={() => openSeries(s.id)} />
+        <PosterCard imdb={s.imdbRating} key={s.id} title={s.title} sub={[s.year, s.genres?.[0]].filter(Boolean).join(' · ')} image={s.poster} fallback={resizeTmdb(s.backdrop, 'w780')} onClick={() => openSeries(s.id)} />
       ))}
     </Rail>
   );

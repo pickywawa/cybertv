@@ -40,6 +40,7 @@ public class LocalProxy {
     private static final String UA = "VLC/3.0.20 LibVLC/3.0.20";
     private static final long IMG_CACHE_MAX = 400L * 1024 * 1024;
     private static final int FIXED_PORT = 38517;
+    private static final String WIKI_UA = "CyberIPTV/1.0 (https://github.com/pickywawa/cybertv; IPTV player channel logos)";
     /** broken logos are remembered so they never hold one of the WebView's 6 connections again */
     private static final long IMG_ERROR_TTL = 12L * 3600 * 1000;
 
@@ -262,11 +263,13 @@ public class LocalProxy {
         HttpURLConnection c;
         byte[] data;
         try {
-            c = open(url, null, null);
+            // Wikimedia (iptv-org logos) throttles generic agents: identify the app as its policy asks
+            c = open(url, null, url.contains("wikimedia.org") ? WIKI_UA : null);
             int code = c.getResponseCode();
             if (code >= 400) {
                 c.disconnect();
-                markError(errf);
+                // only real "not found / forbidden" answers are remembered; 429 / 5xx are transient
+                if (code < 500 && code != 429 && code != 408) markError(errf);
                 writeText(out, code, "Error", "upstream " + code);
                 return;
             }
@@ -277,7 +280,10 @@ public class LocalProxy {
             }
             if (data.length == 0) throw new IOException("empty image");
         } catch (IOException e) {
+            // timeouts / resets: remembered for 30 min only (a dead host must not hold connections)
             markError(errf);
+            //noinspection ResultOfMethodCallIgnored
+            errf.setLastModified(System.currentTimeMillis() - IMG_ERROR_TTL + 30 * 60 * 1000);
             writeText(out, 502, "Bad Gateway", "image unavailable");
             return;
         }

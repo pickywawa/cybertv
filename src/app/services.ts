@@ -117,7 +117,8 @@ export async function selectProfile(p: Profile) {
   void startEnrichment(p);
   void searchWorker().warm(p.id, (await getMeta<number>(`catalog:version:${p.id}`)) || 0);
   // catalogs synced before language detection existed: resync once to tag languages/countries
-  const LANG_SCHEMA = `schema:langs:v1:${p.id}`;
+  // v0.5: one full resync to restore catalogues an invalid list could have emptied
+  const LANG_SCHEMA = `schema:resync:v5:${p.id}`;
   if (p.lastSyncAt && !(await getMeta<boolean>(LANG_SCHEMA))) void maybeSync(true).then(() => setMeta(LANG_SCHEMA, true));
   else {
     if (!p.lastSyncAt) void setMeta(LANG_SCHEMA, true);

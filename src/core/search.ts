@@ -30,6 +30,23 @@ export class SearchIndex {
     }
   }
 
+  /** same as load(), yielding every `chunk` documents so searches keep being served meanwhile */
+  async loadAsync(docs: SearchDoc[], chunk = 1500) {
+    const seen = new Set<string>();
+    const out: SearchDoc[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      const d = docs[i];
+      const k = d.kind + d.groupKey;
+      if (!seen.has(k)) {
+        seen.add(k);
+        d.n = ' ' + norm(d.title + ' ' + (d.extra || '')) + ' ';
+        out.push(d);
+      }
+      if (i % chunk === chunk - 1) await new Promise((r) => setTimeout(r, 0));
+    }
+    this.docs = out;
+  }
+
   get size() {
     return this.docs.length;
   }

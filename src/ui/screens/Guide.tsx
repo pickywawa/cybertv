@@ -116,7 +116,7 @@ export function Guide({ channelId }: { channelId?: string }) {
               return (
                 <div key={ch.id} className="guide-row" data-row style={{ top: r.start, width: totalW }}>
                   <div className="guide-ch" title={ch.name}>
-                    <Img srcs={[ch.logo]} contain label={ch.name} alt={ch.name} />
+                    <Img srcs={[ch.logo, ch.logoAlt]} contain label={ch.name} alt={ch.name} />
                   </div>
                   {list.map((p) => {
                     const l = Math.max(CH_W, x(p.start));

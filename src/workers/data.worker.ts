@@ -5,7 +5,8 @@ import { syncProfile, syncEpg, syncSource, testSource, loadXtreamEpisodes, prefe
 import { takePrefetchHits } from '@/core/net/http';
 import { Tmdb } from '@/core/enrich/tmdb';
 import { Enricher, enrichSeason, refreshLists } from '@/core/enrich/enrich';
-import { db } from '@/core/db';
+import { db, getMeta, setMeta } from '@/core/db';
+import type { TmdbCollection, TmdbPerson } from '@/core/enrich/tmdb';
 import type { Source, SyncProgress } from '@/core/types';
 
 type Secrets = Record<string, string | undefined>;
@@ -82,6 +83,36 @@ const api = {
 
   async enrichSeason(seriesId: string, season: number) {
     if (tmdb) await enrichSeason(tmdb, seriesId, season);
+  },
+
+  /** saga parts (cached a week) */
+  async tmdbCollection(id: number): Promise<TmdbCollection | null> {
+    const key = `tmdb:collection:${id}`;
+    const c = await getMeta<{ at: number; v: TmdbCollection }>(key);
+    if (c && Date.now() - c.at < 7 * 86400000) return c.v;
+    if (!tmdb) return c?.v || null;
+    try {
+      const v = await tmdb.collection(id);
+      await setMeta(key, { at: Date.now(), v });
+      return v;
+    } catch {
+      return c?.v || null;
+    }
+  },
+
+  /** actor / director page (cached 3 days) */
+  async tmdbPerson(id: number): Promise<TmdbPerson | null> {
+    const key = `tmdb:person:${id}`;
+    const c = await getMeta<{ at: number; v: TmdbPerson }>(key);
+    if (c && Date.now() - c.at < 3 * 86400000) return c.v;
+    if (!tmdb) return c?.v || null;
+    try {
+      const v = await tmdb.person(id);
+      await setMeta(key, { at: Date.now(), v });
+      return v;
+    } catch {
+      return c?.v || null;
+    }
   },
 
   async validateTmdb(token: string) {

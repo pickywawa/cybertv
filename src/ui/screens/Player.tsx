@@ -16,6 +16,8 @@ import { rememberServer } from '@/core/profiles';
 import { useExternalSubs, type ExternalSubs } from '../hooks/useExternalSubs';
 import { SubtitleOverlay } from '../components/SubtitleOverlay';
 import { flagOf } from '@/core/util/lang';
+import { liveEvents, matchEvent, scoreLabel, type LiveEvent } from '@/core/sports';
+import { profileCountry } from '@/core/prefs';
 import { langPrefs, subMode } from '@/core/prefs';
 import { toLang } from '@/core/util/lang';
 import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
@@ -271,6 +273,16 @@ export function Player({ req }: { req: PlayRequest }) {
 
   // ───────── commands ─────────
   const eng = () => engineRef.current;
+
+  // live score of the match being watched (ESPN public scoreboard, every minute)
+  const [scores, setScores] = useState<LiveEvent[]>([]);
+  useEffect(() => {
+    if (mode === 'vod') return;
+    const load = () => void liveEvents(profileCountry(profile)).then(setScores, () => {});
+    load();
+    const tm = setInterval(load, 60000);
+    return () => clearInterval(tm);
+  }, [mode, profile]);
 
   // ───────── external subtitles (OpenSubtitles) ─────────
   const ext = useExternalSubs({ req, profile, tracks, streamUrl: cands[candIdx]?.url, vod: mode === 'vod', playing: st.status === 'playing' });
@@ -591,6 +603,7 @@ export function Player({ req }: { req: PlayRequest }) {
   }
   const atLive = mode === 'live';
   const title = mode === 'vod' ? req.title : progAtHead?.title || req.title;
+  const liveScore = mode !== 'vod' ? matchEvent(progAtHead, scores) : undefined;
   const subtitle = mode === 'vod' ? req.subtitle : [channel?.name, progAtHead?.subTitle].filter(Boolean).join(' · ') || req.subtitle;
   const touch = isTouch();
 
@@ -616,10 +629,16 @@ export function Player({ req }: { req: PlayRequest }) {
 
       <div className={`ui ${(uiVisible || panel || fatal) && !pip ? '' : 'hidden'}`} onPointerUp={onSurfaceTap}>
         <div className="top" onPointerUp={onSurfaceTap}>
-          {mode !== 'vod' && channel?.logo && <Img srcs={[channel.logo]} contain className="ch-logo" alt="" />}
+          {mode !== 'vod' && (channel?.logo || channel?.logoAlt) && <Img srcs={[channel!.logo, channel!.logoAlt]} contain className="ch-logo" alt="" />}
           <div className="ttl">
             <h2 className="ellipsis">{title}</h2>
             {subtitle && <div className="small ellipsis" style={{ opacity: 0.85, marginTop: 4 }}>{subtitle}</div>}
+            {liveScore && (
+              <div className={`score-chip ${liveScore.state === 'in' ? 'live' : ''}`}>
+                {liveScore.state === 'in' && <i />}
+                {scoreLabel(liveScore)}
+              </div>
+            )}
           </div>
           {!isNative && document.pictureInPictureEnabled && (
             <button className="pbtn" data-f onClick={() => eng()?.pip()} aria-label={t('player.pip')}>
@@ -699,7 +718,7 @@ export function Player({ req }: { req: PlayRequest }) {
 
       {banner && !uiVisible && channel && (
         <div className="zap-banner">
-          {channel.logo && <Img srcs={[channel.logo]} contain alt="" />}
+          {(channel.logo || channel.logoAlt) && <Img srcs={[channel.logo, channel.logoAlt]} contain alt="" />}
           <div>
             <div style={{ fontWeight: 800 }}>{channel.num ? `${channel.num} · ` : ''}{channel.name}</div>
             <div className="small">{prog.now ? `${fmtTime(prog.now.start)} ${prog.now.title}` : t('tv.noProgram')}</div>
@@ -753,7 +772,7 @@ export function Player({ req }: { req: PlayRequest }) {
                   <button key={c.id} className={`zap-item ${c.groupKey === channel?.groupKey ? 'cur' : ''}`} data-f data-autofocus={c.groupKey === channel?.groupKey || undefined} onClick={() => void zapTo(c)}>
                     <span className="n">{c.num}</span>
                     <span className="zap-logo">
-                      <Img srcs={[c.logo]} contain label={c.name} alt="" />
+                      <Img srcs={[c.logo, c.logoAlt]} contain label={c.name} alt="" />
                     </span>
                     <span style={{ minWidth: 0 }}>
                       <div className="ellipsis" style={{ fontWeight: 600 }}>{c.name}</div>

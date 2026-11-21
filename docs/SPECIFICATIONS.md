@@ -450,6 +450,20 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - Instantané de l'accueil enregistré (au plus toutes les 20 s) et rechargé avant le premier affichage : l'accueil est visible tout de suite au lancement.
 - Index léger du catalogue en mémoire (sans résumés ni castings), partagé par les grilles et les rails par genre. Avec 30 000 films : réouverture d'une grille en 83 ms contre environ 600 ms auparavant.
 
+### Métadonnées enrichies (V1.5)
+- TMDB v2 (`ENRICH_V = 2`, mise à niveau en tâche de fond des titres déjà enrichis) : classification d'âge du pays (FR, puis US/GB/DE, normalisée en âge minimum), saga (collection), id IMDb, 20 recommandations, casting avec photos.
+- Notes IMDb : fichier officiel `title.ratings.tsv.gz` (environ 9 Mo, usage personnel non commercial), lu en flux, seuls les titres du catalogue sont gardés. Badge sur toutes les affiches.
+- Fiche : âge, IMDb, rail Saga (volets disponibles), Casting, Recommandés (uniquement les titres disponibles, sinon même genre). Fiche acteur : biographie et ses films ou séries disponibles.
+- Contrôle parental par âge (Réglages → Contrôle parental) : code demandé pour ouvrir ou lire un titre classé au-dessus.
+- iptv-org (base CC0, hebdomadaire, incluse dans le préchargement) : logo manquant ou de secours, langues et pays officiels, catégorie, appliqués après chaque synchro.
+- Logos sombres : luminosité mesurée une fois (canvas, via le proxy pour CORS) ; en thème sombre, silhouette blanche ou éclaircissement. Agent utilisateur dédié pour Wikimedia (évite les 429).
+- Scores en direct : JSON public d'ESPN (non officiel, sans clé), football et rugby. Le score est rapproché du programme TV par les noms d'équipes (alias français) et l'horaire, et affiché sur la carte de la chaîne et dans le lecteur.
+
+### Robustesse et recherche (V1.5)
+- Synchro : une liste illisible ou en échec (films, séries) n'est plus traitée comme « liste vide ». La source passe en « Dégradée » et garde son catalogue. Aucune suppression si la nouvelle liste est vide ou chute de plus de 70 % sur un gros catalogue. Une copie préchargée illisible est ignorée au profit du réseau. Une resynchro complète unique a lieu après la mise à jour.
+- Recherche : l'index existant répond tout de suite, et la reconstruction se fait par morceaux en arrière-plan puis bascule d'un coup. L'index est enregistré pour un démarrage à froid immédiat. Le programme TV a son propre index et s'affiche en second. Les résultats sont mémorisés par requête. Avec 31 000 titres : 9 à 31 ms par frappe.
+- Écrans : un garde-fou affiche « Réessayer » au lieu d'un écran noir en cas d'erreur d'affichage.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

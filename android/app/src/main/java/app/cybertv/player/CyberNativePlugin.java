@@ -488,7 +488,7 @@ public class CyberNativePlugin extends Plugin {
             call.reject("url required");
             return;
         }
-        Long startMs = call.getLong("startMs");
+        Long startMs = longArg(call, "startMs");
         live = Boolean.TRUE.equals(call.getBoolean("live", false));
         String audioLang = call.getString("audioLang");
         String subLang = call.getString("subLang");
@@ -529,8 +529,29 @@ public class CyberNativePlugin extends Plugin {
 
     @PluginMethod
     public void playerSeek(PluginCall call) {
-        long pos = call.getLong("positionMs", 0L);
+        Long pos = longArg(call, "positionMs");
+        if (pos == null || pos < 0) {
+            // never turn a bad value into "go back to the start"
+            call.reject("positionMs required");
+            return;
+        }
         onPlayer(call, () -> player.seekTo(pos));
+    }
+
+    /**
+     * Numbers from JS arrive as Integer, Long or Double depending on their size; Capacitor's
+     * getLong() only accepts Long and silently returns the default for an Integer (any position
+     * under ~24 days in ms), which made every seek / resume jump to 0.
+     */
+    @androidx.annotation.Nullable
+    static Long longArg(PluginCall call, String key) {
+        Object v = call.getData().opt(key);
+        if (v instanceof Number) {
+            double d = ((Number) v).doubleValue();
+            if (Double.isNaN(d) || Double.isInfinite(d)) return null;
+            return Math.round(d);
+        }
+        return null;
     }
 
     @PluginMethod

@@ -35,6 +35,8 @@ export interface GlobalSettings {
   syncIntervalH: number;
   tonightStartMin: number;
   autoTrailer: boolean;
+  /** the user muted a trailer: keep trailers muted from then on */
+  trailerMuted: boolean;
   /** Android: pre-download catalogues and guides in the background (WorkManager) */
   prefetch: boolean;
   prefetchWifiOnly: boolean;
@@ -49,6 +51,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   syncIntervalH: 12,
   tonightStartMin: 20 * 60 + 50,
   autoTrailer: true,
+  trailerMuted: false,
   prefetch: true,
   prefetchWifiOnly: true,
   hideAdult: true,

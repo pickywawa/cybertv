@@ -16,7 +16,6 @@ import { PosterCard } from '../components/Cards';
 import { IcCheck, IcPlay, IcPlus, IcRestart, IcStar, IcVolume, IcVolumeOff } from '../icons';
 import { flagOf, type LangPrefs } from '@/core/util/lang';
 import { langPrefs } from '@/core/prefs';
-import { isTvMode } from '@/core/platform';
 import { openMovie, openSeries, playEpisode, playMovie, prioritizeEnrichment } from '../actions';
 import { loadXtreamEpisodesIfNeeded } from '../episodes';
 
@@ -49,31 +48,77 @@ function youtubeKey(url?: string): string | undefined {
   return url?.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/)?.[1];
 }
 
-/** Muted trailer replacing the backdrop after a few seconds (YouTube embed, no controls) */
+/**
+ * Trailer replacing the backdrop shortly after the page opens (YouTube embed, no controls).
+ * Sound on by default; muting is remembered for the next trailers. If the browser refuses to
+ * autoplay with sound, it plays muted instead (without changing the saved choice).
+ */
 function TrailerBg({ url }: { url?: string }) {
   const settings = useApp((s) => s.settings);
+  const update = useApp((s) => s.updateSettings);
   const playing = useApp((s) => !!s.player);
   const key = youtubeKey(url);
   const [mount, setMount] = useState(false);
   const [on, setOn] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(settings.trailerMuted);
   const ref = useRef<HTMLIFrameElement>(null);
   const enabled = !!key && settings.autoTrailer && !settings.performance && !playing;
+  const startMuted = useRef(settings.trailerMuted);
   useEffect(() => {
     if (!enabled) {
       setMount(false);
       setOn(false);
       return;
     }
-    const tm = setTimeout(() => setMount(true), 3500);
+    startMuted.current = useApp.getState().settings.trailerMuted;
+    setMuted(startMuted.current);
+    const tm = setTimeout(() => setMount(true), 900);
     return () => clearTimeout(tm);
   }, [enabled]);
+
+  const cmd = (func: string) => ref.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+
+  // YouTube IFrame API messages: reveal once the video really plays, fall back to muted if blocked
+  useEffect(() => {
+    if (!mount) return;
+    let playingSeen = false;
+    const onMsg = (e: MessageEvent) => {
+      if (!/youtube(-nocookie)?\.com$/.test(new URL(e.origin).hostname) || e.source !== ref.current?.contentWindow) return;
+      let d: any;
+      try {
+        d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch {
+        return;
+      }
+      const state = d?.event === 'onStateChange' ? d.info : d?.info?.playerState;
+      if (state === 1 && !playingSeen) {
+        playingSeen = true;
+        // a short beat hides YouTube's title overlay
+        setTimeout(() => setOn(true), 350);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    const fallback = setTimeout(() => {
+      if (playingSeen) return;
+      if (!startMuted.current) {
+        cmd('mute');
+        cmd('playVideo');
+        setMuted(true);
+      }
+      // no API message at all (blocked postMessage): show it anyway, as before
+      setTimeout(() => setOn(true), 1200);
+    }, 3500);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      clearTimeout(fallback);
+    };
+  }, [mount]);
+
   if (!enabled || !mount) return null;
   const params = new URLSearchParams({
-    autoplay: '1', mute: '1', controls: '0', loop: '1', playlist: key!, modestbranding: '1', playsinline: '1', rel: '0',
+    autoplay: '1', mute: startMuted.current ? '1' : '0', controls: '0', loop: '1', playlist: key!, modestbranding: '1', playsinline: '1', rel: '0',
     iv_load_policy: '3', disablekb: '1', fs: '0', enablejsapi: '1', origin: location.origin,
   });
-  const cmd = (func: string) => ref.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
   return (
     <>
       <div className={`trailer ${on ? 'on' : ''}`}>
@@ -84,16 +129,19 @@ function TrailerBg({ url }: { url?: string }) {
           tabIndex={-1}
           allow="autoplay; encrypted-media; picture-in-picture"
           referrerPolicy="strict-origin-when-cross-origin"
-          // the first frames are YouTube's poster/spinner: reveal once the video actually runs
-          onLoad={() => setTimeout(() => setOn(true), 3000)}
+          onLoad={() => ref.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'cyber-trailer' }), '*')}
         />
       </div>
-      {on && !isTvMode() && (
+      {on && (
         <button
           className="icon-btn trailer-mute"
+          data-f
           onClick={() => {
-            cmd(muted ? 'unMute' : 'mute');
-            setMuted(!muted);
+            const next = !muted;
+            cmd(next ? 'mute' : 'unMute');
+            setMuted(next);
+            // remembered for the next trailers
+            update({ trailerMuted: next });
           }}
           aria-label={muted ? t('detail.unmute') : t('detail.mute')}
         >

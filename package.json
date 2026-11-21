@@ -1,7 +1,7 @@
 {
   "name": "cybertv",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -44,6 +44,6 @@
   },
   "cyber": {
     "updateUrl": "https://github.com/pickywawa/cybertv/releases/latest/download/update.json",
-    "minNativeCode": 4
+    "minNativeCode": 5
   }
 }

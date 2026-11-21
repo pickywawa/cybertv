@@ -106,10 +106,15 @@ export const Top10Card = memo(function Top10Card(p: Base & { rank: number; title
   );
 });
 
-export const Tile = memo(function Tile(p: Base & { label: string; color: string }) {
+/** Home category shortcut: icon chip + label, in the app's surface style */
+export const Tile = memo(function Tile(p: Base & { label: string; sub?: string; icon: ReactNode }) {
   return (
-    <button className="card tile" data-f onClick={p.onClick} style={{ background: p.color }}>
-      <span>{p.label}</span>
+    <button className="card cat-card" data-f onClick={p.onClick}>
+      <span className="ic">{p.icon}</span>
+      <span className="txt">
+        <span className="lb">{p.label}</span>
+        {p.sub && <span className="sb">{p.sub}</span>}
+      </span>
     </button>
   );
 });

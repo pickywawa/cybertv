@@ -3,6 +3,7 @@ import { CyberNative, type NativePlayerState, type NativeTrack } from '../native
 import type { EngineState, EngineTracks, PlayerEngine } from './engine';
 import { initialState } from './engine';
 import { useApp } from '@/state/store';
+import { langPrefs, subMode } from '../prefs';
 
 /** Android Media3/ExoPlayer, rendered on a SurfaceView below the transparent WebView */
 export class NativeEngine implements PlayerEngine {
@@ -46,13 +47,16 @@ export class NativeEngine implements PlayerEngine {
 
   async load(url: string, opts: { startAt?: number; live?: boolean }) {
     this.stateCb({ ...initialState, status: 'loading', isLive: !!opts.live });
-    const { preferredAudio, preferredSubs } = useApp.getState().settings;
+    const prof = useApp.getState().profile;
+    const prefs = prof ? langPrefs(prof) : { audio: [], subs: [] };
+    // 'auto' subtitles are switched on by the player screen once the audio language is known
+    const subs = prof && subMode(prof) === 'always' ? prefs.subs.join(',') : 'off';
     await CyberNative.playerOpen({
       url,
       startMs: opts.startAt ? Math.round(opts.startAt * 1000) : undefined,
       live: opts.live,
-      audioLang: preferredAudio,
-      subLang: preferredSubs,
+      audioLang: prefs.audio.join(','),
+      subLang: subs,
     });
   }
   play() {

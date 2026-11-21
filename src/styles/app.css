@@ -518,7 +518,7 @@ textarea.input { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .mobile .hero .btn { height: 44px; padding: 0 18px; }
 
 /* Search & Live TV: keep content below the status bar on mobile */
-.mobile .tab-search, .mobile .tab-tv { padding-top: var(--sat); }
+.mobile .tab-tv { padding-top: var(--sat); }
 .mobile .tab-search .search-box { margin-top: 12px; }
 .mobile .tab-tv .tv-head { padding-top: 12px; }
 
@@ -542,3 +542,58 @@ textarea.input { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .zap-item .name-tile .nm { display: none; }
 .zap-item .name-tile .mono { width: 26px; height: 26px; font-size: 0.7rem; border-radius: 7px; }
 .ch-logo-badge .name-tile, .player .ch-logo + .name-tile { display: none; }
+
+/* ───────────── Home categories (app style) ───────────── */
+.cat-rail .rail-track { gap: 12px; }
+.cat-card {
+  display: flex; align-items: center; gap: 12px; width: auto; min-width: clamp(160px, 16vw, 230px); height: 72px; padding: 0 22px 0 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); transition: background .15s, border-color .15s;
+}
+.cat-card .ic {
+  flex: none; width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent);
+}
+.cat-card .ic svg { width: 24px; height: 24px; }
+.cat-card .txt { display: flex; flex-direction: column; min-width: 0; }
+.cat-card .lb { font-weight: 700; font-size: 1rem; white-space: nowrap; }
+.cat-card .sb { font-size: .8rem; color: var(--text-2); }
+.cat-card:hover { background: var(--surface-2); }
+.cat-card[data-f]:focus-visible, .kbd .cat-card[data-f]:focus { transform: scale(1.04); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.cat-card[data-f]:focus-visible .ic, .kbd .cat-card[data-f]:focus .ic { background: var(--accent); color: var(--accent-text); }
+.mobile .cat-card { min-width: 0; height: 56px; padding: 0 16px 0 9px; gap: 10px; }
+.mobile .cat-card .ic { width: 38px; height: 38px; border-radius: 10px; }
+.mobile .cat-card .ic svg { width: 20px; height: 20px; }
+.mobile .cat-card .lb { font-size: .92rem; }
+
+/* ───────────── Player side panel: tap outside / close button ───────────── */
+.player .panel-scrim { position: absolute; inset: 0; z-index: 2; background: rgba(0, 0, 0, 0.35); }
+.player .panel { padding-top: calc(24px + var(--sat)); }
+.player .panel .panel-close { position: sticky; top: 0; float: right; margin: -8px -4px 0 8px; z-index: 1; background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+/* ───────────── Safe areas: search & my videos ───────────── */
+.tab-search { padding-top: 8px; }
+.mobile .tab-search { padding-top: var(--sat); }
+.tab-myvideos { padding-top: 20px; }
+.mobile .tab-myvideos { padding-top: calc(12px + var(--sat)); }
+
+/* ───────────── Languages ───────────── */
+.lang-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mobile .lang-pair { grid-template-columns: 1fr; }
+.lang-chip { white-space: nowrap; }
+.langs { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: .9rem; color: var(--text-2); }
+.langs .grp { display: inline-flex; align-items: center; gap: 6px; }
+.langs .grp b { color: var(--text); font-weight: 600; margin-right: 2px; }
+.langs .flag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: .82rem; font-weight: 600; }
+.langs .flag .e { font-size: 1rem; line-height: 1; }
+.langs .flag.mine { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* ───────────── Detail trailer backdrop ───────────── */
+.detail-hero .bg .trailer { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity 1.2s ease; pointer-events: none; container-type: size; }
+.detail-hero .bg .trailer.on { opacity: 1; }
+/* 16:9 iframe covering the hero, cropped (no letterbox, YouTube chrome pushed outside) */
+.detail-hero .bg .trailer iframe {
+  position: absolute; top: 50%; left: 50%; border: 0; pointer-events: none;
+  width: calc(max(100cqw, 177.78cqh) * 1.18); height: calc(max(100cqh, 56.25cqw) * 1.18); transform: translate(-50%, -50%);
+}
+.trailer-mute { position: absolute; right: clamp(16px, 3vw, 44px); bottom: 24px; z-index: 3; background: rgba(0, 0, 0, 0.5); color: #fff; }
+a.btn { text-decoration: none; }

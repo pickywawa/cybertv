@@ -19,6 +19,14 @@ export interface Profile {
   /** parental control for the Adult universe */
   parental: { enabled: boolean; pin?: string };
   hasTmdb: boolean;
+  /** ISO 3166 country (channel ranking, TMDB region) */
+  country?: string;
+  /** preferred audio languages (ISO 639-1): [primary, secondary?] */
+  audioLangs?: string[];
+  /** preferred subtitle languages: [primary, secondary?] */
+  subLangs?: string[];
+  /** when to show subtitles: never, only when the audio isn't a preferred language, always */
+  subMode?: 'off' | 'auto' | 'always';
   createdAt: number;
   lastSyncAt?: number;
 }
@@ -80,6 +88,10 @@ export interface Channel {
   num: number;
   /** m3u only: direct stream url */
   url?: string;
+  /** audio languages detected from the name / category / EPG id */
+  langs?: string[];
+  /** ISO country guessed from prefix / EPG id */
+  country?: string;
 }
 
 export interface Movie {
@@ -108,6 +120,13 @@ export interface Movie {
   groupKey: string;
   enrichedAt?: number;
   url?: string;
+  /** audio languages (provider tags, then learned from the real tracks once played) */
+  langs?: string[];
+  subs?: string[];
+  /** TMDB original language */
+  origLang?: string;
+  /** set when langs/subs come from the actual stream tracks */
+  tracksAt?: number;
 }
 
 export interface Series {
@@ -133,6 +152,9 @@ export interface Series {
   groupKey: string;
   enrichedAt?: number;
   episodesLoadedAt?: number;
+  langs?: string[];
+  subs?: string[];
+  origLang?: string;
 }
 
 export interface Episode {

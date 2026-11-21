@@ -31,8 +31,7 @@ export interface GlobalSettings {
   performance: boolean;
   syncIntervalH: number;
   tonightStartMin: number;
-  preferredAudio: string;
-  preferredSubs: string;
+  autoTrailer: boolean;
   hideAdult: boolean;
   recentSearches: string[];
 }
@@ -43,8 +42,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   performance: false,
   syncIntervalH: 12,
   tonightStartMin: 20 * 60 + 50,
-  preferredAudio: 'fr',
-  preferredSubs: 'off',
+  autoTrailer: true,
   hideAdult: true,
   recentSearches: [],
 };

@@ -407,12 +407,19 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 | norigin-spatial-navigation | Navigation D-pad maison (`src/ui/spatial.ts`, ~250 lignes) | Fonctionne avec la virtualisation, gère l'appui long OK |
 | TanStack Router / Query | Pile de routes Zustand + hook `useAsync` | Plus léger, gestion du « retour » télécommande simple |
 | FlexSearch | Index maison dans un worker (`src/core/search.ts`) | < 20 ms sur 100k titres, zéro dépendance |
-| Service Worker pour les images | Proxy natif `/img` avec cache disque LRU (200 Mo) | Les Service Workers sont peu fiables dans la WebView Android |
+| Service Worker pour les images | Android : proxy natif `/img` avec cache disque LRU (400 Mo, TMDB inclus). Web : Service Worker `public/sw.js` (cache-first, 2 500 images) | Les Service Workers sont peu fiables dans la WebView Android |
 | Plugin natif en Kotlin | Java | Pas de plugin Kotlin à configurer dans Gradle |
 
 ### Fait et testé
 - Navigateur : onboarding, sources Xtream + M3U, synchro, EPG, TMDB (affiches, logos, synopsis, casting, trailers), accueil, TV (Maintenant / Ce soir / catégories / favoris), guide, chaînes + replay, fiches film/série, recherche, lecteur (direct, différé, depuis le début, retour au direct, reprise VOD, fallback), mobile.
 - Android (émulateur Pixel 9, API 36) : proxy natif, Keystore, synchro, lecteur Media3 sous la WebView, HLS adaptatif (pistes vidéo détectées), passage en paysage + immersif, contrôles HTML par-dessus la vidéo, retour matériel.
+
+### Langues, pays et classement (V1.1)
+- Profil : pays, langue audio préférée + seconde, langue de sous-titres préférée + seconde, affichage des sous-titres (jamais / si VO / toujours).
+- Langues détectées à la synchro (`src/core/util/lang.ts`) : préfixes fournisseur (`FR:`, `|EN|`), tags `VF`/`VOSTFR`/`MULTI`, nom de catégorie, `tvg-language`/`tvg-country`, suffixe d'id EPG (`tf1.fr`). Après lecture d'un film, les vraies pistes audio/sous-titres remplacent les tags.
+- Accueil, grilles, recherche et choix de la version lue : contenu dans la langue préférée d'abord, puis seconde langue, puis sous-titré, puis non précisé, puis le reste.
+- Onglet TV (`src/core/channelRank.ts`) : classement national de référence (audiences annuelles, aucune API gratuite d'audience en temps réel) × langue × pays × programme en cours (sport en direct, grands événements, JT, film en prime). Filtre « Mes langues » activé par défaut.
+- Fiche : drapeaux audio / sous-titres, bande-annonce YouTube muette en fond après 3,5 s (désactivable dans Lecteur, coupée en mode performance).
 
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.

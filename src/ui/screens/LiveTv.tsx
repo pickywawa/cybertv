@@ -12,6 +12,9 @@ import { Menu, Sheet } from '../components/Overlay';
 import { IcCalendar, IcHeart, IcHeartFill, IcPlay, IcRestart, IcHd, IcInfo } from '../icons';
 import { openChannel, playChannel } from '../actions';
 import { isTvMode } from '@/core/platform';
+import { langPrefs, profileCountry } from '@/core/prefs';
+import { matchesLangs, rankChannels } from '@/core/channelRank';
+import { flagOf } from '@/core/util/lang';
 
 const ORDER: Universe[] = ['general', 'sport', 'cinema', 'kids', 'news', 'series', 'docs', 'ent', 'music', 'other', 'adult'];
 type Cat = 'fav' | 'all' | Universe;
@@ -28,7 +31,11 @@ export function LiveTv() {
   const minute = Math.floor(now / 60000);
   const narrow = useMediaQuery('(max-width: 760px)') && !isTvMode();
 
+  const [allLangs, setAllLangs] = useState(() => sessionStorage.getItem('tv.allLangs') === '1');
   useEffect(() => sessionStorage.setItem('tv.cat', cat), [cat]);
+  useEffect(() => sessionStorage.setItem('tv.allLangs', allLangs ? '1' : '0'), [allLangs]);
+  const prefs = useMemo(() => langPrefs(profile), [profile]);
+  const country = profileCountry(profile);
 
   const hideAdult = settings.hideAdult && !(profile.parental.enabled && unlocked);
   const channels = useAsync(() => liveChannels(profile.id, { hideAdult }), [profile.id, hideAdult]);
@@ -37,22 +44,43 @@ export function LiveTv() {
   const evening = useAsync(() => (mode === 'tonight' ? tonight(settings.tonightStartMin) : Promise.resolve(new Map<string, Program>())), [mode, settings.tonightStartMin], { epg: true });
 
   const favKeys = useMemo(() => new Set((favs || []).map((f) => f.key.replace(/^live:/, ''))), [favs]);
+  // channels in the user's audio languages (untagged ones included); fall back to everything
+  const langChannels = useMemo(() => {
+    if (!channels) return undefined;
+    const mine = channels.filter((c) => matchesLangs(c, prefs));
+    return { mine, hasOthers: mine.length < channels.length, usable: mine.length >= 5 };
+  }, [channels, prefs]);
+  const pool = useMemo(
+    () => (!channels || !langChannels ? undefined : allLangs || !langChannels.usable ? channels : langChannels.mine),
+    [channels, langChannels, allLangs],
+  );
+
   const cats = useMemo(() => {
-    const present = new Set((channels || []).map((c) => c.universe));
+    const present = new Set((pool || []).map((c) => c.universe));
     return ORDER.filter((u) => present.has(u));
-  }, [channels]);
+  }, [pool]);
+
+  // ranking only changes when the programme on air changes (EPG map refreshes every minute)
+  const ranked = useMemo(() => {
+    if (!pool) return undefined;
+    const progs = new Map<string, Program | undefined>();
+    if (mode === 'tonight' && evening) for (const [k, v] of evening) progs.set(k, v);
+    else if (epg) for (const [k, v] of epg) progs.set(k, v.now);
+    return rankChannels(pool, { country, prefs, programs: progs, at: mode === 'tonight' && evening ? [...evening.values()][0]?.start : Date.now() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pool, epg, evening, mode, country, prefs]);
 
   const list = useMemo(() => {
-    if (!channels) return [];
+    if (!ranked || !channels) return [];
     let l: Channel[];
     if (cat === 'fav') {
       const order = new Map((favs || []).map((f, i) => [f.key.replace(/^live:/, ''), i]));
       l = channels.filter((c) => favKeys.has(c.groupKey)).sort((a, b) => order.get(a.groupKey)! - order.get(b.groupKey)!);
-    } else if (cat === 'all') l = channels;
-    else l = channels.filter((c) => c.universe === cat);
+    } else if (cat === 'all') l = ranked;
+    else l = ranked.filter((c) => c.universe === cat);
     if (mode === 'tonight' && evening) l = l.filter((c) => c.epgId && evening.has(c.epgId));
     return l;
-  }, [channels, cat, favs, favKeys, mode, evening]);
+  }, [ranked, channels, cat, favs, favKeys, mode, evening]);
 
   const zapList = useMemo(() => list.map((c) => c.id), [list]);
 
@@ -74,6 +102,11 @@ export function LiveTv() {
       </div>
       <div className="chips-bar">
         <div className="chips" data-row>
+          {langChannels?.hasOthers && langChannels.usable && (
+            <button data-f className={`chip lang-chip ${allLangs ? '' : 'active'}`} onClick={() => setAllLangs(!allLangs)} title={t('tv.myLangs')}>
+              {allLangs ? `🌐 ${t('tv.allLangs')}` : `${prefs.audio.map(flagOf).join(' ')} ${t('tv.myLangs')}`}
+            </button>
+          )}
           {(['fav', 'all', ...cats] as Cat[]).map((c) => (
             <button key={c} data-f className={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>
               {label(c)}
@@ -83,7 +116,7 @@ export function LiveTv() {
       </div>
 
       <div className="container" style={{ paddingTop: 22 }}>
-        {!channels ? (
+        {!ranked ? (
           <div className="spinner big" style={{ margin: '60px auto' }} />
         ) : list.length === 0 ? (
           <div className="empty">{cat === 'fav' ? t('tv.noFav') : mode === 'tonight' ? t('tv.tonightEmpty') : t('tv.noChannels')}</div>

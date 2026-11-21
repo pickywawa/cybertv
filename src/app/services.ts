@@ -1,5 +1,5 @@
 import { App as CapApp } from '@capacitor/app';
-import { db, getMeta } from '@/core/db';
+import { db, getMeta, setMeta } from '@/core/db';
 import { setProxyBase } from '@/core/net/http';
 import { setImageProxy } from '@/core/images';
 import { isNative, setTvMode, isTvMode } from '@/core/platform';
@@ -81,7 +81,13 @@ export async function selectProfile(p: Profile) {
   await loadSecrets(p.id, true);
   void startEnrichment(p);
   void searchWorker().warm(p.id, (await getMeta<number>(`catalog:version:${p.id}`)) || 0);
-  void maybeSync();
+  // catalogs synced before language detection existed: resync once to tag languages/countries
+  const LANG_SCHEMA = `schema:langs:v1:${p.id}`;
+  if (p.lastSyncAt && !(await getMeta<boolean>(LANG_SCHEMA))) void maybeSync(true).then(() => setMeta(LANG_SCHEMA, true));
+  else {
+    if (!p.lastSyncAt) void setMeta(LANG_SCHEMA, true);
+    void maybeSync();
+  }
   if (periodic) clearInterval(periodic);
   periodic = window.setInterval(() => void maybeSync(), 20 * 60000);
 }

@@ -7,6 +7,7 @@ import {
   channelGroupKey, cleanName, detectQuality, detectUniverse, movieGroupKey, norm, parseEpisode, parseTitleYear, seriesGroupKey,
 } from '../util/text';
 import { parseXmltv, type XmltvChannel } from '../epg/xmltv';
+import { channelCountry, channelLangs, detectLangs } from '../util/lang';
 
 export type Progress = (p: SyncProgress) => void;
 
@@ -31,7 +32,7 @@ async function pruneStale(table: any, sourceId: string, keep: Set<string>) {
   for (let i = 0; i < stale.length; i += BATCH) await table.bulkDelete(stale.slice(i, i + BATCH));
 }
 
-const ENRICH_FIELDS = ['poster', 'backdrop', 'logo', 'plot', 'rating', 'genres', 'cast', 'director', 'trailer', 'tmdbId', 'durationSec', 'year', 'enrichedAt'] as const;
+const ENRICH_FIELDS = ['poster', 'backdrop', 'logo', 'plot', 'rating', 'genres', 'cast', 'director', 'trailer', 'tmdbId', 'durationSec', 'year', 'enrichedAt', 'origLang'] as const;
 
 /** keep TMDB enrichment & first-seen date when a row is re-synced */
 async function mergeExisting<T extends Movie | Series>(table: any, sourceId: string, rows: T[], firstSync: boolean) {
@@ -52,6 +53,12 @@ async function mergeExisting<T extends Movie | Series>(table: any, sourceId: str
       }
     }
     if ((old as Series).episodesLoadedAt) (r as Series).episodesLoadedAt = (old as Series).episodesLoadedAt;
+    // languages learned from the real stream tracks beat provider tags
+    if ((old as Movie).tracksAt) {
+      (r as Movie).langs = (old as Movie).langs;
+      (r as Movie).subs = (old as Movie).subs;
+      (r as Movie).tracksAt = (old as Movie).tracksAt;
+    }
   }
 }
 
@@ -75,6 +82,8 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   const [lcats, lstreams] = await Promise.all([x.liveCategories(), x.liveStreams()]);
   const cats = new Map<string, Category>();
   const catRows: Category[] = [];
+  const rawCat = new Map<string, string>();
+  for (const c of [...asArray<any>(lcats)]) rawCat.set(`${src.id}:lc:${c.category_id}`, c.category_name || '');
   asArray<any>(lcats).forEach((c, i) => {
     const row: Category = {
       id: `${src.id}:lc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'live',
@@ -88,13 +97,16 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     .map((s, i) => {
       const categoryId = `${src.id}:lc:${s.category_id}`;
       const archive = s.tv_archive === 1 || s.tv_archive === '1';
+      const epgId = s.epg_channel_id ? String(s.epg_channel_id).toLowerCase() : undefined;
+      const country = channelCountry(s.name || '', rawCat.get(categoryId), epgId);
       return {
         id: `${src.id}:l:${s.stream_id}`, sourceId: src.id, profileId: src.profileId, extId: String(s.stream_id),
         rawName: s.name || '', name: cleanName(s.name || ''), logo: s.stream_icon || undefined, categoryId,
         universe: catUniverse(cats, categoryId) || detectUniverse(s.name) || 'other',
-        epgId: s.epg_channel_id ? String(s.epg_channel_id).toLowerCase() : undefined,
+        epgId,
         catchupDays: archive ? num(s.tv_archive_duration) || 1 : 0, catchupMode: archive ? 'xc' : null,
         quality: detectQuality(s.name || ''), groupKey: channelGroupKey(s.name || ''), num: num(s.num) ?? i + 1,
+        country, langs: channelLangs(s.name || '', rawCat.get(categoryId), epgId, undefined, country),
       } satisfies Channel;
     });
   await bulkPutBatched(db.categories, catRows);
@@ -110,17 +122,20 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
   }));
   const vcatMap = new Map(vcatRows.map((c) => [c.id, c]));
+  const vcatRaw = new Map(asArray<any>(vcats).map((c) => [`${src.id}:vc:${c.category_id}`, String(c.category_name || '')]));
   const movies: Movie[] = asArray<any>(vstreams).map((s) => {
     const { title, year: y } = parseTitleYear(s.name || '');
     const year = num(s.year) || y;
     const tmdbId = num(s.tmdb) || num(s.tmdb_id);
     const categoryId = `${src.id}:vc:${s.category_id}`;
+    const li = detectLangs(s.name, vcatRaw.get(categoryId));
     return {
       id: `${src.id}:m:${s.stream_id}`, sourceId: src.id, profileId: src.profileId, extId: String(s.stream_id),
       rawName: s.name || '', title, year, poster: s.stream_icon || undefined,
       rating: num(s.rating) || (num(s.rating_5based) ? num(s.rating_5based)! * 2 : undefined),
       tmdbId, addedAt: (num(s.added) || 0) * 1000, ext: s.container_extension || 'mp4', categoryId,
       universe: catUniverse(vcatMap, categoryId) || 'cinema', groupKey: movieGroupKey(title, year, tmdbId), enrichedAt: 0,
+      langs: li.audio, subs: li.subs,
     } satisfies Movie;
   });
   await mergeExisting(db.movies, src.id, movies, firstSync);
@@ -137,11 +152,13 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
   }));
   const scatMap = new Map(scatRows.map((c) => [c.id, c]));
+  const scatRaw = new Map(asArray<any>(scats).map((c) => [`${src.id}:sc:${c.category_id}`, String(c.category_name || '')]));
   const series: Series[] = asArray<any>(slist).map((s) => {
     const { title, year: y } = parseTitleYear(s.name || '');
     const tmdbId = num(s.tmdb) || num(s.tmdb_id);
     const categoryId = `${src.id}:sc:${s.category_id}`;
     const bd = asArray<string>(s.backdrop_path)[0];
+    const li = detectLangs(s.name, scatRaw.get(categoryId));
     return {
       id: `${src.id}:s:${s.series_id}`, sourceId: src.id, profileId: src.profileId, extId: String(s.series_id),
       rawName: s.name || '', title, year: y || num(String(s.releaseDate || s.release_date || '').slice(0, 4)),
@@ -150,6 +167,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
       cast: s.cast ? String(s.cast).split(',').map((c: string) => c.trim()).filter(Boolean).slice(0, 10) : undefined,
       tmdbId, addedAt: (num(s.last_modified) || 0) * 1000, categoryId,
       universe: catUniverse(scatMap, categoryId) || 'series', groupKey: seriesGroupKey(title, tmdbId), enrichedAt: 0,
+      langs: li.audio, subs: li.subs,
     } satisfies Series;
   });
   await mergeExisting(db.series, src.id, series, firstSync);
@@ -232,21 +250,26 @@ async function syncM3u(src: Source, progress: Progress) {
       else if (cu === 'fs' || cu === 'flussonic-hls' || cu === 'flussonic-ts') mode = 'flussonic';
       else if (days > 0 && /\/\d+\.(ts|m3u8)$/.test(e.url)) mode = 'xc';
       const extId = e.url.match(/\/(\d+)(?:\.\w+)?$/)?.[1] || fnv(e.url);
+      const epgId = (e.attrs['tvg-id'] || '').toLowerCase() || undefined;
+      const country = channelCountry(e.name, group, epgId, e.attrs['tvg-country']);
       channels.push({
         id: `${src.id}:l:${fnv(e.url)}`, sourceId: src.id, profileId: src.profileId, extId,
         rawName: e.name, name: cleanName(e.name), logo, categoryId: c.id,
         universe: (c.universe !== 'other' ? c.universe : detectUniverse(e.name)) || 'other',
-        epgId: (e.attrs['tvg-id'] || '').toLowerCase() || undefined,
+        epgId,
+        country, langs: channelLangs(e.name, group, epgId, e.attrs['tvg-language'], country),
         catchupDays: mode ? days || 7 : 0, catchupMode: mode, catchupSource: e.attrs['catchup-source'] || undefined,
         quality: detectQuality(e.name), groupKey: channelGroupKey(e.name), num: num(e.attrs['tvg-chno']) ?? channels.length + 1, url: e.url,
       });
     } else if (kind === 'movie') {
       const c = catFor('vod', group);
       const { title, year } = parseTitleYear(e.name);
+      const li = detectLangs(e.name, group, e.attrs['tvg-language']);
       movies.push({
         id: `${src.id}:m:${fnv(e.url)}`, sourceId: src.id, profileId: src.profileId, extId: fnv(e.url), rawName: e.name,
         title, year, poster: logo, addedAt: 0, ext: e.url.split('?')[0].split('.').pop() || 'mp4', categoryId: c.id,
         universe: c.universe !== 'other' ? c.universe : 'cinema', groupKey: movieGroupKey(title, year), enrichedAt: 0, url: e.url,
+        langs: li.audio, subs: li.subs,
       });
     } else {
       const c = catFor('series', group);
@@ -258,6 +281,10 @@ async function syncM3u(src: Source, progress: Progress) {
           id: sid, sourceId: src.id, profileId: src.profileId, extId: fnv(norm(title)), rawName: ep.show, title, year,
           poster: logo, addedAt: 0, categoryId: c.id, universe: c.universe !== 'other' ? c.universe : 'series',
           groupKey: seriesGroupKey(title), enrichedAt: 0, episodesLoadedAt: Date.now(),
+          ...(() => {
+            const li = detectLangs(e.name, group, e.attrs['tvg-language']);
+            return { langs: li.audio, subs: li.subs };
+          })(),
         });
       }
       episodes.push({

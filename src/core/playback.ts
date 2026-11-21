@@ -3,7 +3,10 @@ import { db } from './db';
 import type { Channel, Episode, Movie, PlayRequest, Program, Series, Source } from './types';
 import { catchupUrl, episodeUrl, liveUrl, movieUrl, type Engine } from './sources/urls';
 import { loadSecrets, sourcesOf, watchKey } from './repo';
-import { QUALITY_RANK } from './util/text';
+import { QUALITY_RANK, detectQuality } from './util/text';
+import { detectLangs, langScore, type LangPrefs } from './util/lang';
+import { langPrefs } from './prefs';
+import { useApp } from '@/state/store';
 import { isNative } from './platform';
 import { t } from './i18n';
 
@@ -16,6 +19,42 @@ async function ctx(profileId: string) {
 }
 
 const qlabel = (q: string | null) => q || 'Auto';
+
+function currentPrefs(): LangPrefs | undefined {
+  const p = useApp.getState().profile;
+  return p ? langPrefs(p) : undefined;
+}
+
+/** "FHD · VF", "4K · MULTI", "VOSTFR" — readable name of one VOD variant */
+function versionLabel(rawName: string): string {
+  const parts: string[] = [];
+  const q = detectQuality(rawName);
+  if (q) parts.push(q);
+  const up = rawName.toUpperCase();
+  if (/\bMULTI\b/.test(up)) parts.push('MULTI');
+  else if (/\bVOST(FR)?\b/.test(up)) parts.push('VOSTFR');
+  else if (/\bVFQ\b/.test(up)) parts.push('VFQ');
+  else if (/\b(VFF|VF|TRUEFRENCH|FRENCH)\b/.test(up)) parts.push('VF');
+  else {
+    const l = detectLangs(rawName).audio[0];
+    if (l) parts.push(l.toUpperCase());
+  }
+  return parts.join(' · ');
+}
+
+/** unique, readable labels; identical urls removed */
+function finalizeCandidates(list: PlayRequest['candidates'], multiSource: boolean, sourceLabel: (id: string) => string): PlayRequest['candidates'] {
+  const seen = new Set<string>();
+  const out = list.filter((c) => (seen.has(c.url) ? false : (seen.add(c.url), true)));
+  const counts = new Map<string, number>();
+  return out.map((c) => {
+    let label = [multiSource ? sourceLabel(c.sourceId) : '', c.label].filter(Boolean).join(' · ') || 'Version';
+    const n = (counts.get(label) || 0) + 1;
+    counts.set(label, n);
+    if (n > 1) label = `${label} (${n})`;
+    return { ...c, label };
+  });
+}
 
 /** All variants of the same channel, preferred one first, then by source priority & quality */
 export async function channelVariants(ch: Channel): Promise<Channel[]> {
@@ -45,6 +84,9 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
     const url = catchup ? catchupUrl(v, src, secrets[src.id], catchup.start, Math.min(catchup.stop, Date.now())) : liveUrl(v, src, secrets[src.id], engineKind());
     if (url) candidates.push({ url, label: label(v), quality: v.quality, sourceId: v.sourceId });
   }
+  const uniq = finalizeCandidates(candidates, false, () => '');
+  candidates.length = 0;
+  candidates.push(...uniq);
   return {
     kind: 'live',
     itemId: ch.id,
@@ -61,15 +103,24 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
 
 export async function playMovieRequest(m: Movie, startAt?: number): Promise<PlayRequest> {
   const { byId, order, secrets } = await ctx(m.profileId);
+  const prefs = currentPrefs();
   const variants = (await db.movies.where('groupKey').equals(m.groupKey).toArray())
     .filter((x) => x.profileId === m.profileId && order.has(x.sourceId))
-    .sort((a, b) => (a.id === m.id ? -1 : b.id === m.id ? 1 : order.get(a.sourceId)! - order.get(b.sourceId)!));
-  const candidates = variants
-    .map((v) => {
-      const src = byId.get(v.sourceId)!;
-      return { url: movieUrl(v.extId, v.ext, src, secrets[src.id], v.url), label: src.label, quality: null, sourceId: src.id };
-    })
-    .filter((c) => !!c.url);
+    .sort((a, b) =>
+      a.id === m.id ? -1 : b.id === m.id ? 1
+        : (prefs ? langScore(a, prefs) - langScore(b, prefs) : 0) || order.get(a.sourceId)! - order.get(b.sourceId)!
+          || (QUALITY_RANK[String(detectQuality(b.rawName))] ?? 0) - (QUALITY_RANK[String(detectQuality(a.rawName))] ?? 0));
+  const multiSource = new Set(variants.map((v) => v.sourceId)).size > 1;
+  const candidates = finalizeCandidates(
+    variants
+      .map((v) => {
+        const src = byId.get(v.sourceId)!;
+        return { url: movieUrl(v.extId, v.ext, src, secrets[src.id], v.url), label: versionLabel(v.rawName), quality: detectQuality(v.rawName), sourceId: src.id };
+      })
+      .filter((c) => !!c.url),
+    multiSource,
+    (id) => byId.get(id)?.label || '',
+  );
   return {
     kind: 'movie', itemId: m.id, title: m.title, subtitle: [m.year, m.genres?.slice(0, 2).join(', ')].filter(Boolean).join(' · '),
     image: m.backdrop || m.poster, logo: m.logo, candidates, startAt, durationSec: m.durationSec,
@@ -86,12 +137,17 @@ export async function playEpisodeRequest(s: Series, ep: Episode, startAt?: numbe
     if (e) others.push(e);
   }
   const all = [ep, ...others.sort((a, b) => order.get(a.sourceId)! - order.get(b.sourceId)!)];
-  const candidates = all
-    .filter((e) => byId.has(e.sourceId))
-    .map((e) => {
-      const src = byId.get(e.sourceId)!;
-      return { url: episodeUrl(e.extId, e.ext, src, secrets[src.id], e.url), label: src.label, quality: null, sourceId: src.id };
-    });
+  const candidates = finalizeCandidates(
+    all
+      .filter((e) => byId.has(e.sourceId))
+      .map((e) => {
+        const src = byId.get(e.sourceId)!;
+        const raw = [s, ...sibling].find((x) => x.id === e.seriesId)?.rawName || '';
+        return { url: episodeUrl(e.extId, e.ext, src, secrets[src.id], e.url), label: versionLabel(raw), quality: detectQuality(raw), sourceId: src.id };
+      }),
+    new Set(all.map((e) => e.sourceId)).size > 1,
+    (id) => byId.get(id)?.label || '',
+  );
   return {
     kind: 'episode', itemId: ep.id, seriesId: s.id, title: s.title,
     subtitle: `S${ep.season} E${ep.episode}${!isGenericEpisodeTitle(ep.title) ? ' · ' + ep.title : ''}`,

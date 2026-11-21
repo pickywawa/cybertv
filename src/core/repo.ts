@@ -3,6 +3,31 @@ import type { Channel, Episode, Favorite, Movie, Program, Series, Source, TmdbLi
 import { listsKey, type TmdbLists } from './enrich/enrich';
 import { movieGroupKey, seriesGroupKey, QUALITY_RANK } from './util/text';
 import { secureGet, sourcePassKey } from './secure';
+import { sortByLang, type LangPrefs } from './util/lang';
+
+/** language-aware dedup: best variant for the user's languages represents the group, languages merged */
+export function dedupLang<T extends { groupKey: string; langs?: string[]; subs?: string[] }>(rows: T[], prefs?: LangPrefs): T[] {
+  if (!prefs) return dedup(rows);
+  const merged = new Map<string, { langs: Set<string>; subs: Set<string> }>();
+  for (const r of rows) {
+    const m = merged.get(r.groupKey) || merged.set(r.groupKey, { langs: new Set(), subs: new Set() }).get(r.groupKey)!;
+    for (const l of r.langs || []) m.langs.add(l);
+    for (const l of r.subs || []) m.subs.add(l);
+  }
+  const best = new Map<string, T>();
+  for (const r of sortByLang(rows, prefs)) if (!best.has(r.groupKey)) best.set(r.groupKey, r);
+  // keep the incoming order (first appearance of each group), then sort by language bucket
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (seen.has(r.groupKey)) continue;
+    seen.add(r.groupKey);
+    const b = best.get(r.groupKey)!;
+    const m = merged.get(r.groupKey)!;
+    out.push({ ...b, langs: [...m.langs], subs: [...m.subs] });
+  }
+  return sortByLang(out, prefs);
+}
 
 export function dedup<T extends { groupKey: string }>(rows: T[]): T[] {
   const seen = new Set<string>();
@@ -177,14 +202,14 @@ export async function matchSeries(profileId: string, list: TmdbListItem[]): Prom
   return out;
 }
 
-export async function latestMovies(profileId: string, limit = 40, hideAdult = true): Promise<Movie[]> {
-  const rows = await db.movies.where('[profileId+addedAt]').between([profileId, -Infinity], [profileId, Infinity]).reverse().limit(limit * 3).toArray();
-  return dedup(rows.filter((m) => !(hideAdult && m.universe === 'adult'))).slice(0, limit);
+export async function latestMovies(profileId: string, limit = 40, hideAdult = true, prefs?: LangPrefs): Promise<Movie[]> {
+  const rows = await db.movies.where('[profileId+addedAt]').between([profileId, -Infinity], [profileId, Infinity]).reverse().limit(limit * 4).toArray();
+  return dedupLang(rows.filter((m) => !(hideAdult && m.universe === 'adult')), prefs).slice(0, limit);
 }
 
-export async function latestSeries(profileId: string, limit = 40, hideAdult = true): Promise<Series[]> {
-  const rows = await db.series.where('[profileId+addedAt]').between([profileId, -Infinity], [profileId, Infinity]).reverse().limit(limit * 3).toArray();
-  return dedup(rows.filter((m) => !(hideAdult && m.universe === 'adult'))).slice(0, limit);
+export async function latestSeries(profileId: string, limit = 40, hideAdult = true, prefs?: LangPrefs): Promise<Series[]> {
+  const rows = await db.series.where('[profileId+addedAt]').between([profileId, -Infinity], [profileId, Infinity]).reverse().limit(limit * 4).toArray();
+  return dedupLang(rows.filter((m) => !(hideAdult && m.universe === 'adult')), prefs).slice(0, limit);
 }
 
 export async function moviesSample(profileId: string, limit = 3000): Promise<Movie[]> {
@@ -198,7 +223,7 @@ export interface GridQuery {
   sort?: 'added' | 'rating' | 'title' | 'year';
 }
 
-export async function gridMovies(profileId: string, q: GridQuery, hideAdult: boolean): Promise<Movie[]> {
+export async function gridMovies(profileId: string, q: GridQuery, hideAdult: boolean, prefs?: LangPrefs): Promise<Movie[]> {
   let rows = q.categoryId
     ? await db.movies.where('categoryId').equals(q.categoryId).toArray()
     : await db.movies.where('profileId').equals(profileId).toArray();
@@ -208,10 +233,11 @@ export async function gridMovies(profileId: string, q: GridQuery, hideAdult: boo
       (!q.universe || m.universe === q.universe || (q.universe === 'kids' && (m.genres || []).some((g) => /anim|famil|kids/i.test(g)))) &&
       (!q.genre || (m.genres || []).includes(q.genre)),
   );
-  return sortRows(dedup(rows), q.sort);
+  const sorted = sortRows(dedupLang(rows, prefs), q.sort);
+  return prefs ? sortByLang(sorted, prefs) : sorted;
 }
 
-export async function gridSeries(profileId: string, q: GridQuery, hideAdult: boolean): Promise<Series[]> {
+export async function gridSeries(profileId: string, q: GridQuery, hideAdult: boolean, prefs?: LangPrefs): Promise<Series[]> {
   let rows = q.categoryId
     ? await db.series.where('categoryId').equals(q.categoryId).toArray()
     : await db.series.where('profileId').equals(profileId).toArray();
@@ -221,7 +247,8 @@ export async function gridSeries(profileId: string, q: GridQuery, hideAdult: boo
       (!q.universe || m.universe === q.universe || (q.universe === 'kids' && (m.genres || []).some((g) => /anim|famil|kids/i.test(g)))) &&
       (!q.genre || (m.genres || []).includes(q.genre)),
   );
-  return sortRows(dedup(rows), q.sort);
+  const sorted = sortRows(dedupLang(rows, prefs), q.sort);
+  return prefs ? sortByLang(sorted, prefs) : sorted;
 }
 
 function sortRows<T extends { addedAt: number; rating?: number; title: string; year?: number }>(rows: T[], sort: GridQuery['sort'] = 'added'): T[] {

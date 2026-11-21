@@ -3,25 +3,27 @@ import { useApp } from '@/state/store';
 import { t, fmtDuration } from '@/core/i18n';
 import { db } from '@/core/db';
 import {
-  continueWatching, dedup, favoritesOf, latestMovies, latestSeries, matchMovies, matchSeries, moviesSample, tmdbLists,
+  continueWatching, dedup, dedupLang, favoritesOf, latestMovies, latestSeries, matchMovies, matchSeries, moviesSample, tmdbLists,
 } from '@/core/repo';
 import type { Movie, Series, WatchState } from '@/core/types';
 import { useAsync } from '../hooks';
 import { Rail } from '../components/Rail';
 import { LandCard, PosterCard, Tile, Top10Card } from '../components/Cards';
 import { Img } from '../components/Img';
-import { IcInfo, IcPlay } from '../icons';
+import { IcFilm, IcGlobe, IcInfo, IcKids, IcLive, IcPlay, IcSeries } from '../icons';
 import { openMovie, openSeries, playMovie, prioritizeEnrichment, resume } from '../actions';
 import { resizeTmdb } from '@/core/enrich/tmdb';
+import { langPrefs } from '@/core/prefs';
+import { langScore, sortByLang } from '@/core/util/lang';
 
 type HeroItem = { kind: 'movie' | 'series'; item: Movie | Series };
 
 const TILES = [
-  { key: 'cinema', color: 'linear-gradient(160deg,#1d4ed8,#1e3a8a)' },
-  { key: 'series', color: 'linear-gradient(160deg,#db2777,#9d174d)' },
-  { key: 'kids', color: 'linear-gradient(160deg,#f97316,#c2410c)' },
-  { key: 'docs', color: 'linear-gradient(160deg,#16a34a,#166534)' },
-  { key: 'live', color: 'linear-gradient(160deg,#e11d48,#881337)' },
+  { key: 'cinema', Icon: IcFilm },
+  { key: 'series', Icon: IcSeries },
+  { key: 'live', Icon: IcLive },
+  { key: 'kids', Icon: IcKids },
+  { key: 'docs', Icon: IcGlobe },
 ] as const;
 
 export function Home() {
@@ -31,12 +33,14 @@ export function Home() {
   const setTab = useApp((s) => s.setTab);
   const hideAdult = settings.hideAdult || (profile.parental.enabled && !useApp.getState().unlockedAdult);
 
+  const prefsKey = `${profile.lang}|${profile.audioLangs?.join()}|${profile.subLangs?.join()}`;
   const data = useAsync(async () => {
+    const prefs = langPrefs(profile);
     const lists = await tmdbLists(profile.lang);
-    const [cont, fresh, newSeries, top, nowPlaying, popularMovies, topRated, trendingTv, popularTv, favs, sample] = await Promise.all([
+    const [cont, fresh, newSeries, top0, nowPlaying0, popularMovies0, topRated0, trendingTv0, popularTv0, favs, sample0] = await Promise.all([
       continueWatching(profile.id),
-      latestMovies(profile.id, 40, hideAdult),
-      latestSeries(profile.id, 40, hideAdult),
+      latestMovies(profile.id, 40, hideAdult, prefs),
+      latestSeries(profile.id, 40, hideAdult, prefs),
       matchMovies(profile.id, lists?.trendingMovies || []),
       matchMovies(profile.id, lists?.nowPlaying || []),
       matchMovies(profile.id, lists?.popularMovies || []),
@@ -46,19 +50,24 @@ export function Home() {
       favoritesOf(profile.id),
       moviesSample(profile.id, 4000),
     ]);
+    // content in the user's audio languages first (secondary language next, then untagged, then the rest)
+    const L = <T extends Movie | Series>(rows: T[]) => sortByLang(rows, prefs);
+    const top = L(top0.filter((m) => langScore(m, prefs) < 4).length >= 6 ? top0.filter((m) => langScore(m, prefs) < 4) : top0);
+    const [nowPlaying, popularMovies, topRated, trendingTv, popularTv] = [L(nowPlaying0), L(popularMovies0), L(topRated0), L(trendingTv0), L(popularTv0)];
+    const sample = dedupLang(sample0, prefs);
     // genre rails from enriched movies
     const byGenre = new Map<string, Movie[]>();
-    for (const m of dedup(sample)) for (const g of m.genres || []) (byGenre.get(g) || byGenre.set(g, []).get(g)!).push(m);
+    for (const m of sample) for (const g of m.genres || []) (byGenre.get(g) || byGenre.set(g, []).get(g)!).push(m);
     const genres = [...byGenre.entries()].filter(([, l]) => l.length >= 6).sort((a, b) => b[1].length - a[1].length).slice(0, 5);
-    const mustSee = topRated.length >= 6 ? topRated : dedup(sample.filter((m) => (m.rating || 0) >= 7.3)).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 30);
-    const kids = dedup(sample.filter((m) => m.universe === 'kids' || (m.genres || []).some((g) => /anim|famil/i.test(g)))).slice(0, 30);
+    const mustSee = topRated.length >= 6 ? topRated : L(sample.filter((m) => (m.rating || 0) >= 7.3).sort((a, b) => (b.rating || 0) - (a.rating || 0))).slice(0, 30);
+    const kids = sample.filter((m) => m.universe === 'kids' || (m.genres || []).some((g) => /anim|famil/i.test(g))).slice(0, 30);
     const favMovies = (await db.movies.bulkGet(favs.filter((f) => f.kind === 'movie').map((f) => f.itemId))).filter(Boolean) as Movie[];
     const favSeries = (await db.series.bulkGet(favs.filter((f) => f.kind === 'series').map((f) => f.itemId))).filter(Boolean) as Series[];
     return {
       cont, fresh, newSeries, top: top.slice(0, 10), nowPlaying, popularMovies, mustSee, trendingTv, popularTv, genres, kids, favMovies, favSeries,
       hasVod: sample.length > 0 || newSeries.length > 0,
     };
-  }, [profile.id, profile.lang, hideAdult]);
+  }, [profile.id, prefsKey, hideAdult]);
 
   // enrich what's on screen first
   useEffect(() => {
@@ -75,7 +84,10 @@ export function Home() {
       ...data.fresh.map((m) => ({ kind: 'movie' as const, item: m })),
     ];
     const seen = new Set<string>();
-    return pool.filter((h) => h.item.backdrop && !seen.has(h.item.groupKey) && seen.add(h.item.groupKey)).slice(0, 6);
+    const prefs = langPrefs(profile);
+    const ok = pool.filter((h) => h.item.backdrop && !seen.has(h.item.groupKey) && seen.add(h.item.groupKey));
+    return sortByLang(ok.map((h) => ({ ...h, langs: h.item.langs, subs: h.item.subs, origLang: h.item.origLang })), prefs).slice(0, 6);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   if (!data) return <div className="empty"><div className="spinner big" style={{ margin: '80px auto' }} /></div>;
@@ -87,12 +99,12 @@ export function Home() {
     <div>
       {hero.length > 0 ? <Hero items={hero} /> : <div style={{ height: 24 }} />}
 
-      <Rail>
+      <Rail className="cat-rail">
         {TILES.map((tl) => (
           <Tile
             key={tl.key}
             label={tl.key === 'live' ? t('nav.tv') : tl.key === 'cinema' ? t('universe.cinema') : t(`universe.${tl.key}` as 'universe.kids')}
-            color={tl.color}
+            icon={<tl.Icon />}
             onClick={() => {
               if (tl.key === 'live') return setTab('tv');
               if (tl.key === 'series') return push({ name: 'grid', kind: 'series', title: t('universe.series'), filter: {} });
@@ -163,7 +175,7 @@ function MovieRail({ title, items, onAll }: { title: string; items: Movie[]; onA
   return (
     <Rail title={title} onSeeAll={onAll} seeAllLabel={t('common.all')}>
       {items.slice(0, 30).map((m) => (
-        <PosterCard key={m.id} title={m.title} sub={[m.year, m.genres?.[0]].filter(Boolean).join(' · ')} image={m.poster} onClick={() => openMovie(m.id)} onLongPress={() => void playMovie(m.id)} />
+        <PosterCard key={m.id} title={m.title} sub={[m.year, m.genres?.[0]].filter(Boolean).join(' · ')} image={m.poster} fallback={resizeTmdb(m.backdrop, 'w780')} onClick={() => openMovie(m.id)} onLongPress={() => void playMovie(m.id)} />
       ))}
     </Rail>
   );
@@ -174,7 +186,7 @@ function SeriesRail({ title, items, onAll }: { title: string; items: Series[]; o
   return (
     <Rail title={title} onSeeAll={onAll} seeAllLabel={t('common.all')}>
       {items.slice(0, 30).map((s) => (
-        <PosterCard key={s.id} title={s.title} sub={[s.year, s.genres?.[0]].filter(Boolean).join(' · ')} image={s.poster} onClick={() => openSeries(s.id)} />
+        <PosterCard key={s.id} title={s.title} sub={[s.year, s.genres?.[0]].filter(Boolean).join(' · ')} image={s.poster} fallback={resizeTmdb(s.backdrop, 'w780')} onClick={() => openSeries(s.id)} />
       ))}
     </Rail>
   );

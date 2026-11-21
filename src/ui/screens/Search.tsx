@@ -8,6 +8,9 @@ import type { Channel, Movie, Program, Series } from '@/core/types';
 import { isNative } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { norm } from '@/core/util/text';
+import { sortByLang } from '@/core/util/lang';
+import { langPrefs } from '@/core/prefs';
+import { dedupLang } from '@/core/repo';
 import { PosterCard, LandCard, LogoTile } from '../components/Cards';
 import { Rail } from '../components/Rail';
 import { IcMic, IcSearch, IcClose } from '../icons';
@@ -54,10 +57,11 @@ export function Search() {
       const chs = await db.channels.where('epgId').anyOf(epgIds).filter((c) => c.profileId === profile.id).toArray();
       const chByEpg = new Map(chs.map((c) => [c.epgId!, c]));
       const hide = (u: string) => settings.hideAdult && u === 'adult';
+      const prefs = langPrefs(profile);
       setRes({
-        channels: (channels.filter(Boolean) as Channel[]).filter((c) => !hide(c.universe)),
-        movies: (movies.filter(Boolean) as Movie[]).filter((c) => !hide(c.universe)),
-        series: (series.filter(Boolean) as Series[]).filter((c) => !hide(c.universe)),
+        channels: sortByLang((channels.filter(Boolean) as Channel[]).filter((c) => !hide(c.universe)), prefs),
+        movies: dedupLang((movies.filter(Boolean) as Movie[]).filter((c) => !hide(c.universe)), prefs),
+        series: dedupLang((series.filter(Boolean) as Series[]).filter((c) => !hide(c.universe)), prefs),
         programs: progRows.filter((p) => chByEpg.has(p.epgId)).sort((a, b) => a.start - b.start).map((p) => ({ p, ch: chByEpg.get(p.epgId)! })),
       });
       setBusy(false);
@@ -107,7 +111,7 @@ export function Search() {
   const total = useMemo(() => (res ? res.channels.length + res.movies.length + res.series.length : 0), [res]);
 
   return (
-    <div className="tab-search" style={{ paddingTop: 8 }}>
+    <div className="tab-search">
       <div className="search-box" data-row>
         <IcSearch />
         <input

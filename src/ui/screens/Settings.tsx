@@ -201,10 +201,6 @@ function AppearanceSection() {
   );
 }
 
-const LANGS = [
-  ['fr', 'Français'], ['en', 'English'], ['es', 'Español'], ['de', 'Deutsch'], ['it', 'Italiano'], ['ar', 'العربية'], ['pt', 'Português'],
-] as const;
-
 function PlayerSection() {
   const settings = useApp((s) => s.settings);
   const update = useApp((s) => s.updateSettings);
@@ -212,19 +208,14 @@ function PlayerSection() {
   const mm = settings.tonightStartMin % 60;
   return (
     <div className="form">
-      <div className="field">
-        <label>{t('settings.preferredAudio')}</label>
-        <select className="select input" data-f value={settings.preferredAudio} onChange={(e) => update({ preferredAudio: e.target.value })}>
-          {LANGS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-      </div>
-      <div className="field">
-        <label>{t('settings.preferredSubs')}</label>
-        <select className="select input" data-f value={settings.preferredSubs} onChange={(e) => update({ preferredSubs: e.target.value })}>
-          <option value="off">{t('player.off')}</option>
-          {LANGS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-      </div>
+      <button className="list-item" data-f onClick={() => useApp.getState().push({ name: 'profile-edit' })}>
+        <span className="grow">
+          <div>{t('profiles.audio')} · {t('profiles.subtitles')}</div>
+          <div className="small muted">{t('profiles.langHelp')}</div>
+        </span>
+        <IcChevronRight className="chev" />
+      </button>
+      <Toggle label={t('settings.autoTrailer')} on={settings.autoTrailer} onChange={(v) => update({ autoTrailer: v })} />
       <div className="field">
         <label>{t('settings.tonightStart')}</label>
         <input className="input" data-f type="time" value={`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`} onChange={(e) => {
@@ -341,7 +332,7 @@ function AboutSection() {
   return (
     <div className="form">
       <p style={{ lineHeight: 1.6 }}>{t('settings.aboutText')}</p>
-      <p className="small muted">CyberIPTV 0.1.0 · Media3 / hls.js / mpegts.js · TMDB</p>
+      <p className="small muted">CyberIPTV 0.2.0 · Media3 / hls.js / mpegts.js · TMDB</p>
       <button className="btn" data-f onClick={async () => {
         if ('caches' in window) for (const k of await caches.keys()) await caches.delete(k);
         if (isNative) await CyberNative.clearImageCache().catch(() => {});

@@ -37,6 +37,11 @@ export function SourceEdit({ sourceId }: { sourceId?: string }) {
         <div className="btn-row" style={{ marginTop: 18 }}>
           <button className="btn ghost" data-f onClick={() => pop()}>{t('common.cancel')}</button>
           <button className="btn primary" data-f disabled={!draftValid(draft)} onClick={() => void save()}>{t('common.save')}</button>
+          {import.meta.env.DEV && !sourceId && (
+            <button className="btn" data-f onClick={() => setDraft({ type: 'xtream', label: 'Démo', url: `${location.origin}/mock-xtream`, username: 'demo', password: 'demo', epg: '' })}>
+              {t('onboard.demo')}
+            </button>
+          )}
         </div>
       </div>
     </div>

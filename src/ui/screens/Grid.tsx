@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useApp, type GridFilter } from '@/state/store';
 import { t } from '@/core/i18n';
 import { gridMovies, gridSeries } from '@/core/repo';
+import { langPrefs } from '@/core/prefs';
 import type { Movie, Series } from '@/core/types';
 import { useAsync, useMediaQuery } from '../hooks';
 import { VirtualGrid } from '../components/VirtualGrid';
@@ -24,8 +25,8 @@ export function Grid({ kind, title, filter }: { kind: 'movie' | 'series'; title:
   const [sort, setSort] = useState(filter.sort || 'added');
   const mobile = useMediaQuery('(max-width: 760px)') && !isTvMode();
   const items = useAsync<(Movie | Series)[]>(
-    () => (kind === 'movie' ? gridMovies(profile.id, { ...filter, sort }, hideAdult) : gridSeries(profile.id, { ...filter, sort }, hideAdult)),
-    [kind, JSON.stringify(filter), sort, profile.id],
+    () => (kind === 'movie' ? gridMovies(profile.id, { ...filter, sort }, hideAdult, langPrefs(profile)) : gridSeries(profile.id, { ...filter, sort }, hideAdult, langPrefs(profile))),
+    [kind, JSON.stringify(filter), sort, profile.id, profile.lang, profile.audioLangs?.join(), profile.subLangs?.join()],
   );
   useEffect(() => {
     if (items) prioritizeEnrichment(kind, items.slice(0, 40));

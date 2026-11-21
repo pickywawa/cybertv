@@ -24,6 +24,7 @@ export interface TmdbDetails {
   director?: string;
   trailer?: string;
   durationSec?: number;
+  origLang?: string;
 }
 
 type Kind = 'movie' | 'tv';
@@ -132,6 +133,7 @@ export class Tmdb {
       director,
       trailer: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : undefined,
       durationSec: runtime ? runtime * 60 : undefined,
+      origLang: r.original_language || undefined,
     };
   }
 

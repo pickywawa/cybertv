@@ -30,6 +30,8 @@ export function cleanName(raw: string): string {
   let s = raw;
   s = s.replace(/^\s*(\|[A-Z]{2,3}\||\[[A-Z]{2,3}\]|[A-Z]{2,3}\s*[:|\-–]\s+|[A-Z]{2,3}\s*\|\s*)/i, '');
   s = s.replace(/^\s*(FR|EN|UK|US|DE|ES|IT|BE|CH|CA|AR|MULTI|VF|VOSTFR)\s*[:|\-–]\s*/i, '');
+  // iptv-org style annotations
+  s = s.replace(/\[(geo-?blocked|not 24\/7|offline)\]/gi, '').replace(/\(\d{3,4}[pi]\)/gi, '');
   s = s.replace(QUALITY_RE, '');
   s = s.replace(/\b(MULTI|VFF|VFQ|VF|VOSTFR|VOST|TRUEFRENCH|FRENCH|HDR10?\+?|HDR|DV|DOLBY VISION|BACKUP|RAW|\+1)\b/gi, '');
   s = s.replace(/[\[(]\s*[)\]]/g, '');

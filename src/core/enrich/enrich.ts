@@ -54,6 +54,7 @@ function patchFrom(d: TmdbDetails, keepPoster?: string) {
     trailer: d.trailer,
     durationSec: d.durationSec,
     year: d.year,
+    origLang: d.origLang,
     enrichedAt: Date.now(),
   };
 }

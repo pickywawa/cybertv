@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
-export function Rail({ title, onSeeAll, seeAllLabel, children, id }: { title?: ReactNode; onSeeAll?: () => void; seeAllLabel?: string; children: ReactNode; id?: string }) {
+export function Rail({ title, onSeeAll, seeAllLabel, children, id, className }: { title?: ReactNode; onSeeAll?: () => void; seeAllLabel?: string; children: ReactNode; id?: string; className?: string }) {
   return (
-    <section className="rail" id={id}>
+    <section className={`rail ${className || ''}`} id={id}>
       {(title || onSeeAll) && (
         <div className="rail-head">
           <h2 className="section-title">{title}</h2>

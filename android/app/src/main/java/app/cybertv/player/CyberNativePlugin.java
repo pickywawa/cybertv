@@ -342,8 +342,9 @@ public class CyberNativePlugin extends Plugin {
             TrackSelectionParameters.Builder p = player.getTrackSelectionParameters().buildUpon()
                     .clearOverrides()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subLang == null || "off".equals(subLang));
-            if (audioLang != null) p.setPreferredAudioLanguage(audioLang);
-            if (subLang != null && !"off".equals(subLang)) p.setPreferredTextLanguage(subLang);
+            // comma separated lists, most preferred first ("fr,en")
+            if (audioLang != null && !audioLang.isEmpty()) p.setPreferredAudioLanguages(audioLang.split(","));
+            if (subLang != null && !"off".equals(subLang) && !subLang.isEmpty()) p.setPreferredTextLanguages(subLang.split(","));
             player.setTrackSelectionParameters(p.build());
             if (startMs != null && startMs > 0) player.setMediaItem(b.build(), startMs);
             else player.setMediaItem(b.build());

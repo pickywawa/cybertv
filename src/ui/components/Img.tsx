@@ -11,9 +11,17 @@ interface Props {
   eager?: boolean;
 }
 
-/** Lazy image with a fallback chain and a generated placeholder (never an empty box) */
-export const Img = memo(function Img({ srcs, alt = '', label, className, contain, eager }: Props) {
-  const list = srcs.filter(Boolean) as string[];
+/**
+ * Lazy image with a fallback chain and a generated placeholder (never an empty box).
+ * Keyed by the url list: when an item gets enriched (TMDB poster arrives after a provider
+ * poster failed), the fallback index resets instead of staying stuck on the placeholder.
+ */
+export const Img = memo(function Img(p: Props) {
+  const list = p.srcs.filter(Boolean) as string[];
+  return <ImgInner key={list.join('|')} {...p} list={list} />;
+});
+
+function ImgInner({ list, alt = '', label, className, contain, eager }: Props & { list: string[] }) {
   const [i, setI] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const src = list[i];
@@ -47,7 +55,7 @@ export const Img = memo(function Img({ srcs, alt = '', label, className, contain
       }}
     />
   );
-});
+}
 
 /** Typographic stand-in for a missing channel logo */
 export function NameTile({ name }: { name: string }) {

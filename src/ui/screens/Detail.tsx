@@ -1,5 +1,5 @@
 import { isGenericEpisodeTitle } from '@/core/util/text';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/state/store';
 import { t, fmtRuntime, fmtDuration } from '@/core/i18n';
@@ -13,7 +13,10 @@ import { Img } from '../components/Img';
 import { BackButton } from '../components/BackButton';
 import { Rail } from '../components/Rail';
 import { PosterCard } from '../components/Cards';
-import { IcCheck, IcPlay, IcPlus, IcRestart, IcStar } from '../icons';
+import { IcCheck, IcPlay, IcPlus, IcRestart, IcStar, IcVolume, IcVolumeOff } from '../icons';
+import { flagOf, type LangPrefs } from '@/core/util/lang';
+import { langPrefs } from '@/core/prefs';
+import { isTvMode } from '@/core/platform';
 import { openMovie, openSeries, playEpisode, playMovie, prioritizeEnrichment } from '../actions';
 import { loadXtreamEpisodesIfNeeded } from '../episodes';
 
@@ -42,11 +45,114 @@ function Facts({ it, duration }: { it: Movie | Series; duration?: number }) {
   );
 }
 
+function youtubeKey(url?: string): string | undefined {
+  return url?.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/)?.[1];
+}
+
+/** Muted trailer replacing the backdrop after a few seconds (YouTube embed, no controls) */
+function TrailerBg({ url }: { url?: string }) {
+  const settings = useApp((s) => s.settings);
+  const playing = useApp((s) => !!s.player);
+  const key = youtubeKey(url);
+  const [mount, setMount] = useState(false);
+  const [on, setOn] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const ref = useRef<HTMLIFrameElement>(null);
+  const enabled = !!key && settings.autoTrailer && !settings.performance && !playing;
+  useEffect(() => {
+    if (!enabled) {
+      setMount(false);
+      setOn(false);
+      return;
+    }
+    const tm = setTimeout(() => setMount(true), 3500);
+    return () => clearTimeout(tm);
+  }, [enabled]);
+  if (!enabled || !mount) return null;
+  const params = new URLSearchParams({
+    autoplay: '1', mute: '1', controls: '0', loop: '1', playlist: key!, modestbranding: '1', playsinline: '1', rel: '0',
+    iv_load_policy: '3', disablekb: '1', fs: '0', enablejsapi: '1', origin: location.origin,
+  });
+  const cmd = (func: string) => ref.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+  return (
+    <>
+      <div className={`trailer ${on ? 'on' : ''}`}>
+        <iframe
+          ref={ref}
+          src={`https://www.youtube-nocookie.com/embed/${key}?${params}`}
+          title="trailer"
+          tabIndex={-1}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerPolicy="strict-origin-when-cross-origin"
+          // the first frames are YouTube's poster/spinner: reveal once the video actually runs
+          onLoad={() => setTimeout(() => setOn(true), 3000)}
+        />
+      </div>
+      {on && !isTvMode() && (
+        <button
+          className="icon-btn trailer-mute"
+          onClick={() => {
+            cmd(muted ? 'unMute' : 'mute');
+            setMuted(!muted);
+          }}
+          aria-label={muted ? t('detail.unmute') : t('detail.mute')}
+        >
+          {muted ? <IcVolumeOff /> : <IcVolume />}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** audio / subtitle languages of all versions of a title */
+function useGroupLangs(kind: 'movie' | 'series', it: Movie | Series) {
+  return useAsync(async () => {
+    const rows: (Movie | Series)[] = kind === 'movie'
+      ? await db.movies.where('groupKey').equals(it.groupKey).toArray()
+      : await db.series.where('groupKey').equals(it.groupKey).toArray();
+    const audio = new Set<string>();
+    const subs = new Set<string>();
+    for (const r of rows.filter((x) => x.profileId === it.profileId)) {
+      for (const l of r.langs || []) audio.add(l);
+      for (const l of r.subs || []) subs.add(l);
+    }
+    return { audio: [...audio], subs: [...subs] };
+  }, [kind, it.groupKey, it.langs?.join(), it.subs?.join()]);
+}
+
+function Langs({ audio, subs, prefs }: { audio: string[]; subs: string[]; prefs: LangPrefs }) {
+  const order = (l: string[]) => [...l].sort((a, b) => (prefs.audio.indexOf(a) + 1 || 99) - (prefs.audio.indexOf(b) + 1 || 99));
+  if (!audio.length && !subs.length) return <div className="langs"><span className="dim">{t('detail.langUnknown')}</span></div>;
+  const Flag = ({ l, mine }: { l: string; mine: boolean }) => (
+    <span className={`flag ${mine ? 'mine' : ''}`} title={l}>
+      <span className="e">{flagOf(l)}</span>
+      {l.toUpperCase()}
+    </span>
+  );
+  return (
+    <div className="langs">
+      {audio.length > 0 && (
+        <span className="grp">
+          <b>{t('detail.audio')}</b>
+          {order(audio).map((l) => <Flag key={l} l={l} mine={prefs.audio.includes(l)} />)}
+        </span>
+      )}
+      {subs.length > 0 && (
+        <span className="grp">
+          <b>{t('detail.subs')}</b>
+          {order(subs).map((l) => <Flag key={l} l={l} mine={prefs.subs.includes(l)} />)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function HeroBlock({ it, children }: { it: Movie | Series; children: React.ReactNode }) {
   return (
     <section className="detail-hero">
       <div className="bg">
         <Img srcs={[resizeTmdb(it.backdrop, 'w1280'), it.poster]} eager label={it.title} />
+        <TrailerBg url={it.trailer} />
       </div>
       <div className="content">
         {it.logo ? (
@@ -79,12 +185,14 @@ function MovieDetail({ m }: { m: Movie }) {
     return dedup(rows).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 24);
   }, [m.id, m.genres?.join()]);
   const canResume = progress && !progress.completed && progress.positionSec > 60;
+  const langs = useGroupLangs('movie', m);
 
   return (
     <div style={{ paddingBottom: 40 }}>
       <BackButton />
       <HeroBlock it={m}>
         <Facts it={m} duration={m.durationSec} />
+        {langs && <Langs audio={langs.audio} subs={langs.subs} prefs={langPrefs(profile)} />}
         {m.plot && <p style={{ lineHeight: 1.55, maxWidth: 680 }} className="clamp3">{m.plot}</p>}
         {canResume && (
           <div style={{ maxWidth: 360, margin: '12px 0' }}>
@@ -130,6 +238,7 @@ function MovieDetail({ m }: { m: Movie }) {
 function SeriesDetail({ s }: { s: Series }) {
   const profile = useApp((s) => s.profile)!;
   const [fav, toggleFav] = useFav('series', s);
+  const langs = useGroupLangs('series', s);
   const [tab, setTab] = useState<'episodes' | 'similar'>('episodes');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -174,6 +283,7 @@ function SeriesDetail({ s }: { s: Series }) {
       <BackButton />
       <HeroBlock it={s}>
         <Facts it={s} />
+        {langs && <Langs audio={langs.audio} subs={langs.subs} prefs={langPrefs(profile)} />}
         {s.plot && <p style={{ lineHeight: 1.55, maxWidth: 680 }} className="clamp3">{s.plot}</p>}
         <div className="btn-row" data-row style={{ marginTop: 18 }}>
           <button className="btn primary" data-f data-autofocus disabled={!resumeTarget} onClick={() => resumeTarget && void playEpisode(s.id, resumeTarget.ep.id, resumeTarget.at)}>

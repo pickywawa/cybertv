@@ -12,6 +12,8 @@ import { canCatchup } from '@/core/sources/urls';
 import { nowNext, programsFor, saveProgress } from '@/core/repo';
 import { fmtDuration, fmtTime, t } from '@/core/i18n';
 import { useApp } from '@/state/store';
+import { langPrefs, subMode } from '@/core/prefs';
+import { toLang } from '@/core/util/lang';
 import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
 import { Img } from '../components/Img';
 import { Menu } from '../components/Overlay';
@@ -104,6 +106,50 @@ export function Player({ req }: { req: PlayRequest }) {
     void eng.load(c.url, { startAt: candIdx === 0 ? req.startAt : undefined, live: mode === 'live' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cands, candIdx]);
+
+  // ───────── language-aware track selection + learning the real languages of a movie ─────────
+  const autoTracksFor = useRef('');
+  useEffect(() => {
+    const eng = engineRef.current;
+    const c = cands[candIdx];
+    if (!eng || !c || !tracks.audio.length && !tracks.text.length) return;
+    if (autoTracksFor.current === c.url) return;
+    autoTracksFor.current = c.url;
+    const prefs = langPrefs(profile);
+    const audioLangs = [...new Set(tracks.audio.map((a) => toLang(a.language || a.label)).filter(Boolean) as string[])];
+    const subLangs = [...new Set(tracks.text.map((a) => toLang(a.language || a.label)).filter(Boolean) as string[])];
+    // audio: best track in the preferred languages
+    let audio = tracks.audio.find((a) => a.selected);
+    const curLang = toLang(audio?.language || audio?.label);
+    if (tracks.audio.length > 1 && !(curLang && prefs.audio.includes(curLang))) {
+      for (const l of prefs.audio) {
+        const hit = tracks.audio.find((a) => toLang(a.language || a.label) === l);
+        if (hit) {
+          eng.selectTrack('audio', hit.id);
+          audio = hit;
+          break;
+        }
+      }
+    }
+    // subtitles: 'auto' only when the audio isn't a language the user understands
+    const mode = subMode(profile);
+    const aLang = toLang(audio?.language || audio?.label);
+    const foreign = !!aLang && !prefs.audio.includes(aLang);
+    if (tracks.text.length && !tracks.text.some((x) => x.selected) && (mode === 'always' || (mode === 'auto' && foreign))) {
+      for (const l of prefs.subs) {
+        const hit = tracks.text.find((x) => toLang(x.language || x.label) === l);
+        if (hit) {
+          eng.selectTrack('text', hit.id);
+          break;
+        }
+      }
+    }
+    // remember what the stream really contains (flags on the detail page, language ranking)
+    if (req.kind === 'movie' && audioLangs.length && c.url === cands[candIdx]?.url && candIdx === 0) {
+      void db.movies.update(req.itemId, { langs: audioLangs, subs: subLangs, tracksAt: Date.now() });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks]);
 
   const nextCandidate = useCallback(() => {
     setCandIdx((i) => {
@@ -635,8 +681,12 @@ export function Player({ req }: { req: PlayRequest }) {
         <div className="notice">{t('player.webAudioWarn')}</div>
       )}
 
+      {panel && <div className="panel-scrim" onPointerUp={(e) => (e.stopPropagation(), setPanel(null))} />}
       {panel && (
         <div className="panel" data-scope>
+          <button className="panel-close icon-btn" onClick={() => setPanel(null)} aria-label={t('common.close')}>
+            <IcClose />
+          </button>
           {panel === 'channels' && (
             <>
               <h3>{t('player.allChannels')}</h3>
@@ -806,6 +856,8 @@ function SettingsPanel(p: {
                     ...p.tracks.video
                       .slice()
                       .sort((a, b) => (b.height || 0) - (a.height || 0))
+                      // same resolution at several bitrates: keep one entry per label
+                      .filter((v, i, arr) => arr.findIndex((x) => x.label === v.label) === i)
                       .map((v) => ({ label: v.label, checked: v.selected, onSelect: () => p.onTrack('video', v.id) })),
                   ]
                 : []),

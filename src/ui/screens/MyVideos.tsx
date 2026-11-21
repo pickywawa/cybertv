@@ -21,7 +21,7 @@ export function MyVideos() {
   if (!data) return null;
   const empty = !data.cont.length && !data.movies.length && !data.series.length && !data.hist.length;
   return (
-    <div style={{ paddingTop: 20 }}>
+    <div className="tab-myvideos">
       <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ fontSize: '2rem', fontWeight: 700 }}>{t('nav.myvideos')}</h1>
         <button className="btn" data-f onClick={() => setTab('settings')}>

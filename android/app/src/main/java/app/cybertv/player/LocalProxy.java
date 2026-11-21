@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class LocalProxy {
     private static final String TAG = "CyberProxy";
     private static final String UA = "VLC/3.0.20 LibVLC/3.0.20";
-    private static final long IMG_CACHE_MAX = 200L * 1024 * 1024;
+    private static final long IMG_CACHE_MAX = 400L * 1024 * 1024;
 
     private final File imgDir;
     private final ExecutorService pool = Executors.newCachedThreadPool();

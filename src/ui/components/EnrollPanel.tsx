@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import { t } from '@/core/i18n';
-import { isNative } from '@/core/platform';
+import { isAndroidApp } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { parsePayload, pollEnroll, startEnroll, stopEnroll, type EnrollPayload } from '@/core/enroll';
 import { serverLabel } from '@/core/sources/servers';
@@ -52,7 +52,7 @@ export function EnrollPanel({ onImport, onCancel }: { onImport: (p: EnrollPayloa
       }
     };
     const timer = window.setInterval(() => void pollEnroll().then(got, () => {}), 1500);
-    const sub = isNative ? CyberNative.addListener('enrollReceived', (e) => got(parsePayload(e.payload))) : null;
+    const sub = isAndroidApp ? CyberNative.addListener('enrollReceived', (e) => got(parsePayload(e.payload))) : null;
     return () => {
       alive = false;
       clearInterval(timer);

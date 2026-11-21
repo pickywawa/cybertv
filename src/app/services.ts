@@ -2,7 +2,7 @@ import { App as CapApp } from '@capacitor/app';
 import { db, getMeta, setMeta } from '@/core/db';
 import { setProxyBase } from '@/core/net/http';
 import { setImageProxy } from '@/core/images';
-import { isNative, setTvMode, isTvMode } from '@/core/platform';
+import { isAndroidApp, isDesktop, isNative, setTvMode, isTvMode } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { dataWorker, proxyCb, reinitWorkers, searchWorker } from '@/core/workers';
 import { loadSecrets } from '@/core/repo';
@@ -12,7 +12,7 @@ import { applyTheme, useApp } from '@/state/store';
 import { installSpatialNav, setBackHandler, setSmoothScroll } from '@/ui/spatial';
 import type { Profile, SyncProgress } from '@/core/types';
 import { primeCache } from '@/ui/hooks';
-import { checkForUpdate, reportBootOk } from '@/core/updater';
+import { checkForUpdate, installSilentNow, reportBootOk } from '@/core/updater';
 import { enrollTarget } from '@/core/enroll';
 
 let periodic: number | null = null;
@@ -36,13 +36,20 @@ export async function boot() {
       if (isActive) {
         void maybeSync();
         void runUpdateCheck();
+        return;
       }
+      // leaving the app: the right moment for a silent APK update (never during playback)
+      if (useApp.getState().update.kind === 'apk-silent' && !useApp.getState().player) void installSilentNow().catch(() => {});
     });
     // QR enrolment: the TV's page opened cyberiptv://enroll?target=… on this phone
     CapApp.addListener('appUrlOpen', ({ url }) => openDeepLink(url));
     void CapApp.getLaunchUrl().then((r) => r?.url && openDeepLink(r.url)).catch(() => {});
     // this web bundle started: keep it; then look for a newer one in the background
     reportBootOk();
+    setTimeout(() => void runUpdateCheck(), 8000);
+    setInterval(() => void runUpdateCheck(), 6 * 3600000);
+  }
+  if (isDesktop) {
     setTimeout(() => void runUpdateCheck(), 8000);
     setInterval(() => void runUpdateCheck(), 6 * 3600000);
   }
@@ -156,14 +163,14 @@ export async function maybeSync(force = false) {
   const stale = !p.lastSyncAt || Date.now() - p.lastSyncAt > s.settings.syncIntervalH * 3600000;
   // catalogues/guides pre-downloaded in the background since the last sync: apply them now,
   // it's local work only (no network wait), so no progress pill either
-  const pre = isNative && s.settings.prefetch ? await CyberNative.prefetchStatus().catch(() => null) : null;
+  const pre = isAndroidApp && s.settings.prefetch ? await CyberNative.prefetchStatus().catch(() => null) : null;
   const fresh = !!pre && !!p.lastSyncAt && pre.lastOkAt > p.lastSyncAt;
   if (force || stale || fresh) await runSync(p.id, true, { quiet: fresh && !force });
 }
 
 /** hands the URLs of a full sync to Android's WorkManager (runs while the app is closed) */
 export async function schedulePrefetch(profileId: string, runNow = false) {
-  if (!isNative) return;
+  if (!isAndroidApp) return;
   const st = useApp.getState().settings;
   if (!st.prefetch) {
     await CyberNative.prefetchCancel().catch(() => {});

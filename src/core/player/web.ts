@@ -2,6 +2,7 @@ import type Hls from 'hls.js';
 import type { EngineState, EngineTracks, PlayerEngine } from './engine';
 import { initialState } from './engine';
 import { proxify } from '../net/http';
+import { isIOSApp } from '../platform';
 
 type Mpegts = typeof import('mpegts.js').default;
 type MpegtsPlayer = ReturnType<Mpegts['createPlayer']>;
@@ -82,12 +83,24 @@ export class WebEngine implements PlayerEngine {
     this.state = { ...initialState, status: 'loading', isLive: !!opts.live };
     this.stateCb(this.state);
     const v = this.video;
-    const src = proxify(url);
+    // iOS: media requests aren't subject to CORS, AVPlayer reads the provider directly
+    const src = isIOSApp ? url : proxify(url);
     const kind = kindOf(url);
     const fail = (msg: string) => {
       this.state = { ...this.state, status: 'error', error: msg };
       this.stateCb(this.state);
     };
+
+    // iOS: HLS through the system player (AirPlay, Picture in Picture, hardware decoding)
+    if (kind === 'hls' && isIOSApp && v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = src;
+      if (opts.startAt) {
+        const s0 = opts.startAt;
+        v.addEventListener('loadedmetadata', () => (v.currentTime = s0), { once: true });
+      }
+      void v.play().catch(() => {});
+      return;
+    }
 
     if (kind === 'hls') {
       const { default: HlsCtor } = await import('hls.js');

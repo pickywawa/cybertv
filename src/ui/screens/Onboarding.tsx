@@ -13,7 +13,7 @@ import { db } from '@/core/db';
 import { EnrollPanel } from '../components/EnrollPanel';
 import { isTvMode } from '@/core/platform';
 import { updateProfile } from '@/core/profiles';
-import type { EnrollPayload } from '@/core/enroll';
+import { canEnroll, type EnrollPayload } from '@/core/enroll';
 
 const DEV_TMDB = (import.meta.env.DEV && (import.meta.env.VITE_DEV_TMDB_TOKEN as string)) || '';
 
@@ -145,9 +145,11 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
         {step === 1 && !qr && (
           <div className="form">
             <h2>{t('onboard.step.source')}</h2>
-            <button className={`btn ${isTvMode() ? 'primary' : ''} qr-cta`} data-f data-autofocus={isTvMode() || undefined} onClick={() => setQr(true)}>
-              📱 {t('enroll.qrButton')}
-            </button>
+            {canEnroll && (
+              <button className={`btn ${isTvMode() ? 'primary' : ''} qr-cta`} data-f data-autofocus={isTvMode() || undefined} onClick={() => setQr(true)}>
+                📱 {t('enroll.qrButton')}
+              </button>
+            )}
             {drafts.length > 0 && (
               <div className="list">
                 {drafts.map((d, i) => (

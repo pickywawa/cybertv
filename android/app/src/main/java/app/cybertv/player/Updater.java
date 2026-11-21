@@ -11,7 +11,6 @@ import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
 
-import androidx.core.content.FileProvider;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -186,12 +185,44 @@ final class Updater {
         }
     }
 
-    static void install(Activity a, File apk) {
-        Uri uri = FileProvider.getUriForFile(a, a.getPackageName() + ".fileprovider", apk);
-        Intent i = new Intent(Intent.ACTION_VIEW);
-        i.setDataAndType(uri, "application/vnd.android.package-archive");
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-        a.startActivity(i);
+    /**
+     * Installs the downloaded APK through a PackageInstaller session (instead of handing it to the
+     * system installer screen). From Android 12, when this app is its own "installer of record"
+     * (true after its first update installed this way), the update needs no confirmation at all.
+     * Otherwise Android shows its usual confirmation, relayed by InstallResultReceiver.
+     */
+    static void install(Context c, File apk) throws IOException {
+        android.content.pm.PackageInstaller pi = c.getPackageManager().getPackageInstaller();
+        android.content.pm.PackageInstaller.SessionParams params =
+                new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(c.getPackageName());
+        if (Build.VERSION.SDK_INT >= 31) {
+            params.setRequireUserAction(android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+        }
+        int id = pi.createSession(params);
+        try (android.content.pm.PackageInstaller.Session session = pi.openSession(id)) {
+            try (InputStream in = new FileInputStream(apk); OutputStream out = session.openWrite("base.apk", 0, apk.length())) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                session.fsync(out);
+            }
+            Intent cb = new Intent(c, InstallResultReceiver.class);
+            int flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? android.app.PendingIntent.FLAG_MUTABLE : 0);
+            android.app.PendingIntent pending = android.app.PendingIntent.getBroadcast(c, id, cb, flags);
+            session.commit(pending.getIntentSender());
+        }
+    }
+
+    /** true when Android 12+ will let this app update itself with no confirmation */
+    static boolean silentCapable(Context c) {
+        if (Build.VERSION.SDK_INT < 31 || !canInstall(c)) return false;
+        try {
+            String installer = c.getPackageManager().getInstallSourceInfo(c.getPackageName()).getInstallingPackageName();
+            return c.getPackageName().equals(installer);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ───────────────────────── helpers ─────────────────────────

@@ -3,7 +3,7 @@ import type { PlayerEngine, EngineState, EngineTracks } from '@/core/player/engi
 import { initialState } from '@/core/player/engine';
 import { WebEngine } from '@/core/player/web';
 import { NativeEngine } from '@/core/player/native';
-import { isNative, isTvMode, isTouch } from '@/core/platform';
+import { isAndroidApp, isTvMode, isTouch } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { db } from '@/core/db';
 import type { Channel, PlayRequest, Program } from '@/core/types';
@@ -73,18 +73,18 @@ export function Player({ req }: { req: PlayRequest }) {
 
   // ───────── engine lifecycle ─────────
   useEffect(() => {
-    const eng: PlayerEngine = isNative ? new NativeEngine() : new WebEngine(videoRef.current!);
+    const eng: PlayerEngine = isAndroidApp ? new NativeEngine() : new WebEngine(videoRef.current!);
     engineRef.current = eng;
     eng.onState((s) => setSt(s));
     eng.onTracks(() => void eng.tracks().then(setTracks));
-    if (isNative && !isTvMode()) {
+    if (isAndroidApp && !isTvMode()) {
       void CyberNative.setOrientation({ mode: 'landscape' }).catch(() => {});
       void CyberNative.setImmersive({ on: true }).catch(() => {});
     }
     return () => {
       eng.destroy();
       engineRef.current = null;
-      if (isNative && !isTvMode()) {
+      if (isAndroidApp && !isTvMode()) {
         void CyberNative.setOrientation({ mode: 'auto' }).catch(() => {});
         void CyberNative.setImmersive({ on: false }).catch(() => {});
       }
@@ -292,7 +292,7 @@ export function Player({ req }: { req: PlayRequest }) {
     head.current = { pos: st.position, at: performance.now(), playing: st.status === 'playing', rate };
   }, [st.position, st.status, rate]);
   const getTime = useCallback(() => {
-    if (!isNative && videoRef.current) return videoRef.current.currentTime;
+    if (!isAndroidApp && videoRef.current) return videoRef.current.currentTime;
     const h = head.current;
     return h.playing ? h.pos + ((performance.now() - h.at) / 1000) * h.rate : h.pos;
   }, []);
@@ -545,7 +545,7 @@ export function Player({ req }: { req: PlayRequest }) {
   // picture-in-picture (Android): hide the HTML controls in the small window
   const [pip, setPip] = useState(false);
   useEffect(() => {
-    if (!isNative) return;
+    if (!isAndroidApp) return;
     const h = CyberNative.addListener('pipChanged', (e) => setPip(e.active));
     return () => void h.then((x) => x.remove());
   }, []);
@@ -609,7 +609,7 @@ export function Player({ req }: { req: PlayRequest }) {
 
   return (
     <div className="player" ref={rootRef} data-scope onPointerMove={() => !touch && poke()}>
-      {!isNative && <video ref={videoRef} playsInline autoPlay onPointerUp={onSurfaceTap} />}
+      {!isAndroidApp && <video ref={videoRef} playsInline autoPlay onPointerUp={onSurfaceTap} />}
       <div className="ui-surface" style={{ position: 'absolute', inset: 0 }} onPointerUp={onSurfaceTap} />
       {ext.active && ext.cues.length > 0 && <SubtitleOverlay cues={ext.cues} offset={ext.offset} getTime={getTime} raised={uiVisible && !pip} />}
 
@@ -640,12 +640,12 @@ export function Player({ req }: { req: PlayRequest }) {
               </div>
             )}
           </div>
-          {!isNative && document.pictureInPictureEnabled && (
+          {!isAndroidApp && document.pictureInPictureEnabled && (
             <button className="pbtn" data-f onClick={() => eng()?.pip()} aria-label={t('player.pip')}>
               <IcPip />
             </button>
           )}
-          {isNative && !isTvMode() && (
+          {isAndroidApp && !isTvMode() && (
             <button className="pbtn" data-f onClick={() => eng()?.pip()} aria-label={t('player.pip')}>
               <IcPip />
             </button>
@@ -693,7 +693,7 @@ export function Player({ req }: { req: PlayRequest }) {
             <button className="pbtn" data-f onClick={() => setPanel('info')} aria-label={t('player.info')}>
               <IcInfo />
             </button>
-            {!isNative && (
+            {!isAndroidApp && (
               <button className="pbtn" data-f onClick={toggleFullscreen} aria-label="fullscreen">
                 {fullscreen ? <IcExitFullscreen /> : <IcFullscreen />}
               </button>
@@ -754,7 +754,7 @@ export function Player({ req }: { req: PlayRequest }) {
         </div>
       )}
 
-      {!isNative && mode !== 'vod' && uiVisible && candIdx === 0 && st.status === 'playing' && import.meta.env.DEV && (
+      {!isAndroidApp && mode !== 'vod' && uiVisible && candIdx === 0 && st.status === 'playing' && import.meta.env.DEV && (
         <div className="notice">{t('player.webAudioWarn')}</div>
       )}
 
@@ -839,7 +839,7 @@ export function Player({ req }: { req: PlayRequest }) {
                 </p>
               )}
               <p className="xs" style={{ opacity: 0.5, marginTop: 18 }}>
-                {cands[candIdx]?.label} · {isNative ? 'Media3' : 'Web'}
+                {cands[candIdx]?.label} · {isAndroidApp ? 'Media3' : 'Web'}
               </p>
               <button className="btn small" data-f onClick={() => setPanel(null)}>{t('common.close')}</button>
             </div>

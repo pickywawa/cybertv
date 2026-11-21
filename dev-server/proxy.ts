@@ -28,7 +28,7 @@ export function devProxyPlugin(): Plugin {
   };
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse) {
+export async function handle(req: IncomingMessage, res: ServerResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Expose-Headers', '*');
@@ -78,7 +78,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
 const RELAY_HEADERS = ['api-key', 'authorization', 'content-type', 'accept'];
 
-async function relay(req: IncomingMessage, res: ServerResponse) {
+export async function relay(req: IncomingMessage, res: ServerResponse) {
   const target = new URL(req.url || '', 'http://x').searchParams.get('u');
   if (!target || !/^https:\/\/([a-z0-9-]+\.)*opensubtitles\.(com|org)\//i.test(target)) {
     res.statusCode = 400;

@@ -54,12 +54,12 @@ export interface CyberNativePlugin {
   enrollStart(): Promise<{ url: string }>;
   enrollPoll(): Promise<{ payload?: string }>;
   enrollStop(): Promise<void>;
-  updateInfo(): Promise<{ versionCode: number; versionName: string; webVersion?: string; canInstall: boolean }>;
+  updateInfo(): Promise<{ versionCode: number; versionName: string; webVersion?: string; canInstall: boolean; silentUpdates: boolean }>;
   updateBootOk(): Promise<void>;
   updateWeb(o: { url: string; version: string; sha256?: string; apply?: boolean }): Promise<void>;
   updateApplyWeb(): Promise<void>;
   updateDownloadApk(o: { url: string }): Promise<void>;
-  updateInstallApk(): Promise<{ needsPermission: boolean }>;
+  updateInstallApk(): Promise<{ needsPermission: boolean; silent?: boolean }>;
   addListener(event: 'playerState', cb: (s: NativePlayerState) => void): Promise<PluginListenerHandle>;
   addListener(event: 'playerTracks', cb: (t: { tracks: NativeTrack[] }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'enrollReceived', cb: (t: { payload: string }) => void): Promise<PluginListenerHandle>;

@@ -1,4 +1,4 @@
-import { isNative } from './platform';
+import { isAndroidApp, isDesktop } from './platform';
 import { CyberNative } from './native';
 import { proxify } from './net/http';
 
@@ -21,7 +21,11 @@ export interface UpdateManifest {
 export type UpdateState =
   | { kind: 'none' }
   | { kind: 'web-ready'; version: string }
-  | { kind: 'apk'; version: string; url: string; notes?: string };
+  | { kind: 'apk'; version: string; url: string; notes?: string }
+  /** downloaded; Android 12+ installs it silently when the app goes to the background */
+  | { kind: 'apk-silent'; version: string }
+  /** desktop: a newer installer is published (opens the release page) */
+  | { kind: 'desktop'; version: string; url: string };
 
 export const APP_VERSION = __APP_VERSION__;
 
@@ -62,7 +66,15 @@ let checking = false;
  * APK updates are announced and installed on demand (Android asks the user to confirm).
  */
 export async function checkForUpdate(): Promise<UpdateState> {
-  if (!isNative || checking) return { kind: 'none' };
+  if (isDesktop && !checking) {
+    const m = await fetchManifest();
+    if (m && cmpVersion(m.version, APP_VERSION) > 0) {
+      const repo = __UPDATE_URL__.match(/github\.com\/([^/]+\/[^/]+)\//)?.[1];
+      return { kind: 'desktop', version: m.version, url: repo ? `https://github.com/${repo}/releases/tag/v${m.version}` : __UPDATE_URL__ };
+    }
+    return { kind: 'none' };
+  }
+  if (!isAndroidApp || checking) return { kind: 'none' };
   checking = true;
   try {
     const info = await CyberNative.updateInfo();
@@ -74,7 +86,13 @@ export async function checkForUpdate(): Promise<UpdateState> {
       await CyberNative.updateWeb({ url: m.web!, version: m.version, sha256: m.webSha256 });
       return { kind: 'web-ready', version: m.version };
     }
-    if (what === 'apk') return { kind: 'apk', version: m.version, url: m.apk!, notes: m.notes };
+    if (what === 'apk') {
+      if (info.silentUpdates) {
+        await CyberNative.updateDownloadApk({ url: m.apk! });
+        return { kind: 'apk-silent', version: m.version };
+      }
+      return { kind: 'apk', version: m.version, url: m.apk!, notes: m.notes };
+    }
     return { kind: 'none' };
   } catch (e) {
     console.warn('[update]', e);
@@ -92,5 +110,10 @@ export async function installApk(url: string): Promise<'installing' | 'permissio
 
 /** the running bundle booted fine: keep it (otherwise the native side rolls back after 2 launches) */
 export function reportBootOk() {
-  if (isNative) void CyberNative.updateBootOk().catch(() => {});
+  if (isAndroidApp) void CyberNative.updateBootOk().catch(() => {});
+}
+
+/** installs a silently-installable update now (the app is replaced and closes) */
+export async function installSilentNow(): Promise<void> {
+  await CyberNative.updateInstallApk();
 }

@@ -196,6 +196,7 @@ public class CyberNativePlugin extends Plugin {
         String web = Updater.activeWebVersion(getContext());
         if (web != null) r.put("webVersion", web);
         r.put("canInstall", Updater.canInstall(getContext()));
+        r.put("silentUpdates", Updater.silentCapable(getContext()));
         call.resolve(r);
     }
 
@@ -271,9 +272,16 @@ public class CyberNativePlugin extends Plugin {
             call.resolve(r);
             return;
         }
-        Updater.install(getActivity(), apk);
         r.put("needsPermission", false);
-        call.resolve(r);
+        r.put("silent", Updater.silentCapable(getContext()));
+        new Thread(() -> {
+            try {
+                Updater.install(getContext(), apk);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject("install failed: " + e.getMessage());
+            }
+        }, "cyber-update-install").start();
     }
 
     private boolean isTv() {

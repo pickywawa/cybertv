@@ -5,8 +5,10 @@
  *  - web prod: direct (best effort)
  * Workers receive the base via `setProxyBase`.
  */
-let proxyBase: string | null =
-  typeof location !== 'undefined' && import.meta.env?.DEV ? `${location.origin}/proxy?u=` : null;
+// dev server and desktop app (Electron) serve the app and the proxy from the same origin
+const sameOriginProxy =
+  typeof location !== 'undefined' && (import.meta.env?.DEV || (typeof navigator !== 'undefined' && /\bElectron\//.test(navigator.userAgent)));
+let proxyBase: string | null = sameOriginProxy ? `${location.origin}/proxy?u=` : null;
 
 export function setProxyBase(base: string | null) {
   proxyBase = base;

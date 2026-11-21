@@ -12,8 +12,9 @@ import { useApp, applyTheme, type SettingsSection } from '@/state/store';
 import { runSync, runUpdateCheck, schedulePrefetch, startEnrichment } from '@/app/services';
 import { APP_VERSION } from '@/core/updater';
 import { serverLabel } from '@/core/sources/servers';
+import { canEnroll } from '@/core/enroll';
 import { setSmoothScroll } from '../spatial';
-import { isNative, isTvMode } from '@/core/platform';
+import { isAndroidApp, isDesktop, isTvMode } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { Toggle } from '../components/Overlay';
 import { PageHeader } from '../components/BackButton';
@@ -121,7 +122,7 @@ function SourcesSection() {
       ))}
       <div className="btn-row">
         <button className="btn primary" data-f onClick={() => push({ name: 'source-edit' })}>+ {t('settings.addSource')}</button>
-        <button className="btn" data-f onClick={() => push({ name: 'enroll' })}>📱 {t('enroll.fromPhone')}</button>
+        {canEnroll && <button className="btn" data-f onClick={() => push({ name: 'enroll' })}>📱 {t('enroll.fromPhone')}</button>}
         {!isTvMode() && (sources?.length || 0) > 0 && (
           <button className="btn" data-f onClick={() => push({ name: 'send-to-tv' })}>📺 {t('enroll.sendTitle')}</button>
         )}
@@ -379,7 +380,7 @@ function SyncSection() {
           <button key={h} data-f className={settings.syncIntervalH === h ? 'on' : ''} onClick={() => (update({ syncIntervalH: h }), void schedulePrefetch(profile.id))}>{t('settings.every', { n: h })}</button>
         ))}
       </div>
-      {isNative && <PrefetchBox />}
+      {isAndroidApp && <PrefetchBox />}
     </div>
   );
 }
@@ -455,7 +456,7 @@ function AboutSection() {
   const [info, setInfo] = useState<{ versionCode: number; versionName: string; webVersion?: string } | null>(null);
   const [checking, setChecking] = useState(false);
   useEffect(() => {
-    if (isNative) void CyberNative.updateInfo().then(setInfo).catch(() => {});
+    if (isAndroidApp) void CyberNative.updateInfo().then(setInfo).catch(() => {});
   }, []);
   const check = async () => {
     setChecking(true);
@@ -471,19 +472,19 @@ function AboutSection() {
         CyberIPTV {info?.webVersion || APP_VERSION}
         {info ? ` · app ${info.versionName} (${info.versionCode})` : ''} · Media3 / hls.js / mpegts.js · TMDB
       </p>
-      {isNative ? (
+      {isAndroidApp || isDesktop ? (
         <div className="btn-row">
           <button className="btn" data-f disabled={checking} onClick={() => void check()}>
             {checking ? <span className="spinner" /> : <IcRefresh />} {t('update.check')}
           </button>
-          {update.kind !== 'none' && <span className="small">{update.kind === 'web-ready' ? t('update.webReady', { v: update.version }) : t('update.available', { v: update.version })}</span>}
+          {update.kind !== 'none' && <span className="small">{update.kind === 'apk' || update.kind === 'desktop' ? t('update.available', { v: update.version }) : t('update.webReady', { v: update.version })}</span>}
         </div>
       ) : (
         <p className="small dim">{t('update.webOnly')}</p>
       )}
       <button className="btn" data-f onClick={async () => {
         if ('caches' in window) for (const k of await caches.keys()) await caches.delete(k);
-        if (isNative) await CyberNative.clearImageCache().catch(() => {});
+        if (isAndroidApp) await CyberNative.clearImageCache().catch(() => {});
         useApp.getState().toast('OK');
       }}>{t('settings.clearCache')}</button>
     </div>

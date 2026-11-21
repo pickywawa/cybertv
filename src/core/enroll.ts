@@ -1,5 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core';
-import { isNative } from './platform';
+import { isAndroidApp, isDesktop, isNative } from './platform';
 import { CyberNative } from './native';
 import { db } from './db';
 import type { Profile, Source } from './types';
@@ -102,24 +102,27 @@ export function toSourceInput(s: EnrollSource): SourceInput {
 
 // ─────────── TV side ───────────
 
+/** a local server can be opened: Android (EnrollServer), desktop app and dev server (Node) */
+export const canEnroll = isAndroidApp || isDesktop || !!import.meta.env.DEV;
+
 let webToken = '';
 
 export async function startEnroll(): Promise<string> {
-  if (isNative) return (await CyberNative.enrollStart()).url;
+  if (isAndroidApp) return (await CyberNative.enrollStart()).url;
   const r = await (await fetch('/enroll-api/start')).json();
   webToken = r.token;
   return r.url;
 }
 
 export async function pollEnroll(): Promise<EnrollPayload | null> {
-  const raw = isNative
+  const raw = isAndroidApp
     ? (await CyberNative.enrollPoll()).payload
     : (await (await fetch(`/enroll-api/poll?token=${webToken}`)).json()).payload;
   return raw ? parsePayload(raw) : null;
 }
 
 export async function stopEnroll() {
-  if (isNative) await CyberNative.enrollStop().catch(() => {});
+  if (isAndroidApp) await CyberNative.enrollStop().catch(() => {});
 }
 
 /** imports received settings into an existing profile */

@@ -5,7 +5,7 @@ import { db, getMeta } from '@/core/db';
 import { searchWorker } from '@/core/workers';
 import type { SearchHit } from '@/core/search';
 import type { Channel, Movie, Program, Series } from '@/core/types';
-import { isNative } from '@/core/platform';
+import { isAndroidApp } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { sortByLang } from '@/core/util/lang';
 import { langPrefs } from '@/core/prefs';
@@ -108,7 +108,7 @@ export function Search() {
   };
 
   const voice = async () => {
-    if (isNative) {
+    if (isAndroidApp) {
       try {
         setListening(true);
         const r = await CyberNative.speech({ lang: profile.lang === 'fr' ? 'fr-FR' : 'en-US', prompt: t('search.listening') });

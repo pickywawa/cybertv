@@ -57,6 +57,9 @@
 
         </activity>
 
+        <!-- result of self-updates installed through PackageInstaller -->
+        <receiver android:name=".InstallResultReceiver" android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

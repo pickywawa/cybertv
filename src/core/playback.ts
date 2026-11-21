@@ -9,10 +9,10 @@ import { langPrefs } from './prefs';
 import { useApp } from '@/state/store';
 import { serversOf, serverLabel } from './sources/servers';
 import { normalizeServer } from './sources/xtream';
-import { isNative } from './platform';
+import { isAndroidApp } from './platform';
 import { t } from './i18n';
 
-export const engineKind = (): Engine => (isNative ? 'native' : 'web');
+export const engineKind = (): Engine => (isAndroidApp ? 'native' : 'web');
 
 async function ctx(profileId: string) {
   const [sources, secrets] = await Promise.all([sourcesOf(profileId), loadSecrets(profileId)]);

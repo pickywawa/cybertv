@@ -20,7 +20,8 @@ function lanIp(): string {
   return 'localhost';
 }
 
-export function enrollDevPlugin(): Plugin {
+/** `htmlPath`: the phone page (public/enroll.html in dev, dist/enroll.html in the desktop app) */
+export function enrollDevPlugin(htmlPath?: string): Plugin {
   return {
     name: 'cybertv-enroll-dev',
     configureServer(server) {
@@ -57,7 +58,7 @@ export function enrollDevPlugin(): Plugin {
         if (m[2]) return json(200, { ok: true, app: 'CyberIPTV' });
         if (req.method === 'GET') {
           res.setHeader('content-type', 'text/html; charset=utf-8');
-          return res.end(readFileSync(new URL('../public/enroll.html', import.meta.url)));
+          return res.end(readFileSync(htmlPath || new URL('../public/enroll.html', import.meta.url)));
         }
         if (req.method === 'POST') {
           let body = '';

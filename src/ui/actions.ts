@@ -6,6 +6,8 @@ import { t } from '@/core/i18n';
 import { dataWorker } from '@/core/workers';
 import { loadXtreamEpisodesIfNeeded } from './episodes';
 import { needsEnrich } from '@/core/enrich/enrich';
+import { replayInfo, replayPlayRequest, officialPlayRequest, type OfficialLive, type ReplayItem } from '@/core/replay';
+import { getProgress } from '@/core/repo';
 
 /**
  * Parental control by age: a title rated above the profile's limit asks for the PIN first
@@ -57,7 +59,53 @@ export async function playEpisode(seriesId: string, episodeId: string, startAt?:
   });
 }
 
+/** parental age limit for replay titles (their own rating) */
+function replayAgeGate(item: ReplayItem, go: () => void) {
+  const st = useApp.getState();
+  const par = st.profile?.parental;
+  if (!par?.enabled || par.maxAge === undefined || st.unlockedAdult || item.age === undefined || item.age <= par.maxAge) return go();
+  st.toast(t('age.locked', { n: item.age }));
+  window.dispatchEvent(new CustomEvent('cyber:pin', { detail: go }));
+}
+
+export function openReplay(item: ReplayItem) {
+  replayAgeGate(item, () => useApp.getState().push({ name: 'replay', id: item.id, item }));
+}
+
+/** plays a replay video, from where it was left unless `startAt` is given */
+export async function playReplay(item: ReplayItem, startAt?: number) {
+  const st = useApp.getState();
+  const lang = st.profile?.lang || 'fr';
+  replayAgeGate(item, async () => {
+    try {
+      let pos = startAt;
+      if (pos === undefined && st.profile) {
+        const w = await getProgress(st.profile.id, `replay:${item.id}`);
+        if (w && !w.completed && w.positionSec > 30) pos = w.positionSec;
+      }
+      useApp.getState().play(await replayPlayRequest(item, lang, pos));
+    } catch (e) {
+      const m = String((e as Error)?.message || '');
+      st.toast(t(m === 'drm' ? 'replay.drm' : m === 'geo' || /HTTP 4/.test(m) ? 'replay.geo' : 'replay.unavailable'));
+    }
+  });
+}
+
+export async function playOfficial(o: OfficialLive) {
+  const st = useApp.getState();
+  try {
+    st.play(await officialPlayRequest(o, st.profile?.lang || 'fr'));
+  } catch {
+    st.toast(t('replay.geo'));
+  }
+}
+
 export async function resume(w: WatchState) {
+  if (w.kind === 'replay') {
+    const lang = useApp.getState().profile?.lang || 'fr';
+    const item = await replayInfo(w.itemId, lang).catch(() => null);
+    return playReplay(item || { id: w.itemId, provider: w.itemId.startsWith('arte') ? 'arte' : 'francetv', kind: 'video', title: w.title, subtitle: w.subtitle, image: w.image }, w.positionSec);
+  }
   if (w.kind === 'movie') return playMovie(w.itemId, w.positionSec);
   if (w.kind === 'episode' && w.seriesId) {
     await loadXtreamEpisodesIfNeeded(w.seriesId);

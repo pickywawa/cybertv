@@ -13,6 +13,7 @@ const S = (d: string, fill = false) =>
 export const IcHome = S('M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z');
 export const IcSearch = S('M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.6-4.6');
 export const IcTv = S('M3 5h18v12H3zM8 21h8M12 17v4');
+export const IcReplay = S('M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v5h5M10 9v6l5-3z');
 export const IcGrid = S('M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z');
 export const IcMore = S('M5 12h.01M12 12h.01M19 12h.01');
 export const IcPlay = S('M7 4.5v15l13-7.5z', true);

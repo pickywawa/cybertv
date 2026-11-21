@@ -1,0 +1,263 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useApp } from '@/state/store';
+import { t, fmtDate, fmtDuration } from '@/core/i18n';
+import { db } from '@/core/db';
+import { continueWatching, getProgress } from '@/core/repo';
+import type { Channel, WatchState } from '@/core/types';
+import { OFFICIAL_LIVE, officialFor, replayCatalog, replayInfo, replayShow, type OfficialLive, type ReplayCatalog, type ReplayItem, type ReplayProvider, type ReplayShow } from '@/core/replay';
+import { useAsync } from '../hooks';
+import { Rail } from '../components/Rail';
+import { LandCard, LogoTile } from '../components/Cards';
+import { Img } from '../components/Img';
+import { BackButton } from '../components/BackButton';
+import { openReplay, playChannel, playOfficial, playReplay, resume } from '../actions';
+import { IcInfo, IcPlay, IcRefresh, IcRestart } from '../icons';
+
+const MEM = new Map<string, ReplayCatalog>();
+const PROVIDER_LABEL: Record<ReplayProvider, string> = { arte: 'ARTE', francetv: 'france.tv' };
+type Filter = 'all' | ReplayProvider;
+
+function lastDays(it: ReplayItem): number | null {
+  if (!it.expires) return null;
+  const d = Math.ceil((it.expires - Date.now()) / 86400000);
+  return d > 0 && d <= 3 ? d : null;
+}
+
+function cardProps(it: ReplayItem) {
+  const days = lastDays(it);
+  return {
+    title: it.title,
+    sub: it.subtitle || it.channel,
+    sub2: it.durationSec ? fmtDuration(it.durationSec) : it.kind === 'show' ? t('replay.show') : undefined,
+    image: it.image,
+    badge: days ? t('replay.lastDays', { n: days }) : undefined,
+  };
+}
+
+export function Replay() {
+  const profile = useApp((s) => s.profile)!;
+  const lang = profile.lang;
+  const [cat, setCat] = useState<ReplayCatalog | null | undefined>(() => MEM.get(lang));
+  const [filter, setFilter] = useState<Filter>('all');
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    let off = false;
+    // the saved copy shows at once, the network refreshes it when it is old
+    if (!MEM.has(lang)) void replayCatalog(lang, { cachedOnly: true }).then((c) => !off && c && setCat((x) => x ?? c));
+    replayCatalog(lang, { force: reload > 0 }).then(
+      (c) => {
+        if (off || !c) return;
+        MEM.set(lang, c);
+        setCat(c);
+      },
+      () => !off && setCat((x) => x ?? null),
+    );
+    return () => {
+      off = true;
+    };
+  }, [lang, reload]);
+
+  const cont = useAsync(async () => (await continueWatching(profile.id)).filter((w) => w.kind === 'replay'), [profile.id], { key: `replay:cont:${profile.id}` });
+  const rails = useMemo(() => (cat?.rails || []).filter((r) => filter === 'all' || r.provider === filter), [cat, filter]);
+  const hero = useMemo(() => (cat?.hero || []).filter((h) => filter === 'all' || h.provider === filter), [cat, filter]);
+
+  return (
+    <div className="tab-replay">
+      {hero.length > 0 ? <ReplayHero items={hero} /> : <div className="hero-spacer" />}
+      <div className="chips" data-row>
+        {(['all', 'arte', 'francetv'] as Filter[]).map((f) => (
+          <button key={f} data-f className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
+            {f === 'all' ? t('replay.all') : PROVIDER_LABEL[f]}
+          </button>
+        ))}
+      </div>
+      {filter !== 'arte' && <LiveRail />}
+      {!!cont?.length && (
+        <Rail title={t('home.continue')}>
+          {cont.map((w: WatchState) => (
+            <LandCard key={w.key} title={w.title} sub={w.subtitle} image={w.image} progress={w.positionSec / Math.max(1, w.durationSec)} progressLight sub2={fmtDuration(Math.max(0, w.durationSec - w.positionSec))} onClick={() => void resume(w)} />
+          ))}
+        </Rail>
+      )}
+      {cat === undefined && <div className="spinner big" style={{ margin: '80px auto' }} />}
+      {cat === null && (
+        <div className="empty">
+          <p>{t('replay.error')}</p>
+          <button className="btn" data-f onClick={() => setReload((n) => n + 1)}>
+            <IcRefresh /> {t('replay.retry')}
+          </button>
+        </div>
+      )}
+      {cat?.failed.map((p) => (filter === 'all' || filter === p) && (
+        <p key={p} className="container muted small">{t('replay.providerDown', { name: PROVIDER_LABEL[p] })}</p>
+      ))}
+      {rails.map((r) => (
+        <Rail key={r.id} title={<><span className={`rp-prov ${r.provider}`}>{PROVIDER_LABEL[r.provider]}</span>{r.title}</>}>
+          {r.items.map((it) => (
+            <LandCard key={it.id} {...cardProps(it)} onClick={() => openReplay(it)} />
+          ))}
+        </Rail>
+      ))}
+      {cat && <p className="container dim small" style={{ margin: '28px 0 40px' }}>{t('replay.footer')}</p>}
+    </div>
+  );
+}
+
+/** official free live streams; the user's own channel (with its guide) when a source carries it */
+function LiveRail() {
+  const profile = useApp((s) => s.profile)!;
+  const matches = useAsync(async () => {
+    const keys = OFFICIAL_LIVE.flatMap((o) => o.keys);
+    const rows = (await db.channels.where('groupKey').anyOf(keys).toArray()).filter((c) => c.profileId === profile.id);
+    const out = new Map<string, Channel>();
+    for (const c of rows) {
+      const o = officialFor(c);
+      if (o && !out.has(o.key)) out.set(o.key, c);
+    }
+    return out;
+  }, [profile.id], { key: `replay:live:${profile.id}` });
+  const play = (o: OfficialLive) => {
+    const ch = matches?.get(o.key);
+    void (ch ? playChannel(ch) : playOfficial(o));
+  };
+  return (
+    <Rail title={t('replay.live')}>
+      {OFFICIAL_LIVE.map((o) => {
+        const ch = matches?.get(o.key);
+        return <LogoTile key={o.key} name={o.name} logo={ch ? [ch.logo, ch.logoAlt] : undefined} onClick={() => play(o)} />;
+      })}
+    </Rail>
+  );
+}
+
+function ReplayHero({ items }: { items: ReplayItem[] }) {
+  const [i, setI] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (paused || items.length < 2) return;
+    const tm = setInterval(() => setI((x) => (x + 1) % items.length), 8000);
+    return () => clearInterval(tm);
+  }, [items.length, paused]);
+  const it = items[Math.min(i, items.length - 1)];
+  return (
+    <section className="hero" onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
+      <div className="bg">
+        <Img srcs={[it.image?.replace('940x530', '1920x1080')]} eager label={it.title} />
+      </div>
+      <div className="content">
+        <span className={`rp-prov ${it.provider}`}>{it.channel || PROVIDER_LABEL[it.provider]}</span>
+        <h1>{it.title}</h1>
+        <div className="facts">
+          {it.subtitle && <span>{it.subtitle}</span>}
+          {it.genre && <span>{it.genre}</span>}
+          {it.durationSec ? <span>{fmtDuration(it.durationSec)}</span> : null}
+        </div>
+        {it.desc && <p className="clamp3">{it.desc}</p>}
+        <div className="btn-row" data-row>
+          <button className="btn primary" data-f data-autofocus onClick={() => (it.kind === 'video' ? void playReplay(it) : openReplay(it))}>
+            <IcPlay /> {t('home.play')}
+          </button>
+          <button className="btn" data-f onClick={() => openReplay(it)}>
+            <IcInfo /> {t('home.info')}
+          </button>
+        </div>
+      </div>
+      <div className="dots">
+        {items.map((_, k) => (
+          <i key={k} className={k === i ? 'on' : ''} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** a replay video (play / resume) or a show (its seasons and episodes) */
+export function ReplayPage({ id, item }: { id: string; item?: ReplayItem }) {
+  const profile = useApp((s) => s.profile)!;
+  const lang = profile.lang;
+  const isShow = item ? item.kind === 'show' : /^ftvp:|^arte:RC-/.test(id);
+  const [season, setSeason] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const [show, setShow] = useState<ReplayShow | null>(null);
+  const [info, setInfo] = useState<ReplayItem | undefined>(item);
+  const progress = useAsync(() => (isShow ? Promise.resolve(undefined) : getProgress(profile.id, `replay:${id}`)), [id, profile.id]);
+
+  useEffect(() => {
+    let off = false;
+    setFailed(false);
+    if (isShow) replayShow(id, lang).then((s) => !off && (setShow(s), setInfo((x) => ({ ...s.item, ...x, desc: x?.desc || s.item.desc }))), () => !off && setFailed(true));
+    else if (!item?.desc) replayInfo(id, lang).then((x) => !off && setInfo((cur) => ({ ...x, ...cur, desc: cur?.desc || x.desc })), () => !off && !item && setFailed(true));
+    return () => {
+      off = true;
+    };
+  }, [id, lang, isShow, item]);
+
+  const it = info;
+  const resumeAt = progress && !progress.completed && progress.positionSec > 30 ? progress.positionSec : undefined;
+  const seasons = show?.seasons || [];
+  const cur = seasons[Math.min(season, seasons.length - 1)];
+
+  return (
+    <div style={{ paddingBottom: 40 }}>
+      <BackButton />
+      <section className="detail-hero" style={{ minHeight: 'min(62vh, 44vw)' }}>
+        <div className="bg">
+          <Img srcs={[it?.image?.replace('940x530', '1920x1080'), it?.image]} label={it?.title || ''} eager />
+        </div>
+        <div className="content">
+          {it && <span className={`rp-prov ${it.provider}`}>{it.channel || PROVIDER_LABEL[it.provider]}</span>}
+          <h1 style={{ fontSize: 'clamp(1.6rem,3vw,2.6rem)', margin: '6px 0' }}>{it?.title || ''}</h1>
+          {it && (
+            <div className="facts">
+              {it.subtitle && <span>{it.subtitle}</span>}
+              {it.genre && <span>{it.genre}</span>}
+              {it.durationSec ? <span>{fmtDuration(it.durationSec)}</span> : null}
+              {it.age ? <span className="age-pill">{it.age}+</span> : null}
+              {it.expires && <span>{t('replay.until', { date: fmtDate(it.expires, { day: 'numeric', month: 'long' }) })}</span>}
+            </div>
+          )}
+          {it?.desc && <p className="clamp3 muted">{it.desc}</p>}
+          {failed && <p className="muted">{t('replay.unavailable')}</p>}
+          {it && !isShow && (
+            <div className="btn-row" data-row style={{ marginTop: 18 }}>
+              <button className="btn primary" data-f data-autofocus onClick={() => void playReplay(it, resumeAt)}>
+                <IcPlay /> {resumeAt ? t('detail.resume') : t('detail.play')}
+              </button>
+              {resumeAt && (
+                <button className="btn" data-f onClick={() => void playReplay(it, 0)}>
+                  <IcRestart /> {t('detail.restart')}
+                </button>
+              )}
+            </div>
+          )}
+          {isShow && cur?.items[0] && (
+            <div className="btn-row" data-row style={{ marginTop: 18 }}>
+              <button className="btn primary" data-f data-autofocus onClick={() => void playReplay(cur.items[0])}>
+                <IcPlay /> {t('detail.play')}
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+      {isShow && !show && !failed && <div className="spinner big" style={{ margin: '40px auto' }} />}
+      {seasons.length > 1 && (
+        <div className="chips" data-row>
+          {seasons.map((s, k) => (
+            <button key={k} data-f className={`chip ${k === season ? 'active' : ''}`} onClick={() => setSeason(k)}>
+              {s.title}
+            </button>
+          ))}
+        </div>
+      )}
+      {cur && (
+        <Rail title={seasons.length > 1 ? undefined : cur.title || t('detail.episodes')}>
+          {cur.items.map((ep) => (
+            <LandCard key={ep.id} {...cardProps(ep)} title={ep.subtitle && ep.title === it?.title ? ep.subtitle : ep.title} sub={ep.subtitle && ep.title === it?.title ? undefined : ep.subtitle} onClick={() => void playReplay(ep)} />
+          ))}
+        </Rail>
+      )}
+      {isShow && show && !seasons.length && <p className="container muted">{t('replay.noEpisodes')}</p>}
+    </div>
+  );
+}

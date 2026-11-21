@@ -5,7 +5,7 @@ import { isTvMode } from '@/core/platform';
 import { Logo } from '@/app/App';
 import { useMediaQuery } from './hooks';
 import { focusFirst } from './spatial';
-import { IcGrid, IcHome, IcLibrary, IcSearch, IcTv } from './icons';
+import { IcHome, IcLibrary, IcReplay, IcSearch, IcTv } from './icons';
 import { Home } from './screens/Home';
 import { PinPad } from './components/PinPad';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -13,7 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { LiveTv } from './screens/LiveTv';
 
 const Search = lazy(() => import('./screens/Search').then((m) => ({ default: m.Search })));
-const Channels = lazy(() => import('./screens/Channels').then((m) => ({ default: m.Channels })));
+const Replay = lazy(() => import('./screens/Replay').then((m) => ({ default: m.Replay })));
 const MyVideos = lazy(() => import('./screens/MyVideos').then((m) => ({ default: m.MyVideos })));
 const Settings = lazy(() => import('./screens/Settings').then((m) => ({ default: m.Settings })));
 const StackView = lazy(() => import('./StackView').then((m) => ({ default: m.StackView })));
@@ -22,7 +22,7 @@ const TABS: { id: TabId; label: () => string; short?: () => string; icon: typeof
   { id: 'home', label: () => t('nav.home'), icon: IcHome },
   { id: 'search', label: () => t('nav.search'), icon: IcSearch },
   { id: 'tv', label: () => t('nav.tv'), short: () => t('nav.tvShort'), icon: IcTv },
-  { id: 'channels', label: () => t('nav.channels'), icon: IcGrid },
+  { id: 'replay', label: () => t('nav.replay'), icon: IcReplay },
   { id: 'myvideos', label: () => t('nav.myvideos'), icon: IcLibrary },
 ];
 
@@ -77,7 +77,7 @@ export function Shell() {
           {tab === 'home' && <Home />}
           {tab === 'search' && <Search />}
           {tab === 'tv' && <LiveTv />}
-          {tab === 'channels' && <Channels />}
+          {tab === 'replay' && <Replay />}
           {tab === 'myvideos' && <MyVideos />}
           {tab === 'settings' && <Settings />}
         </Suspense>
@@ -133,7 +133,7 @@ function MobileTop({ tab }: { tab: TabId }) {
   const setTab = useApp((s) => s.setTab);
   const profile = useApp((s) => s.profile)!;
   const title =
-    tab === 'search' ? t('nav.search') : tab === 'tv' ? t('nav.tv') : tab === 'channels' ? t('nav.channels') : tab === 'myvideos' ? t('nav.myvideos') : tab === 'settings' ? t('nav.settings') : '';
+    tab === 'search' ? t('nav.search') : tab === 'tv' ? t('nav.tv') : tab === 'replay' ? t('nav.replay') : tab === 'myvideos' ? t('nav.myvideos') : tab === 'settings' ? t('nav.settings') : '';
   return (
     <div className={`mtop ${tab === 'home' ? 'over' : ''}`}>
       {tab === 'home' ? (

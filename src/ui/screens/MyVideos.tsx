@@ -40,7 +40,7 @@ export function MyVideos() {
       {data.hist.length > 0 && (
         <Rail title={t('myvideos.history')}>
           {data.hist.map((w) => (
-            <LandCard key={w.key} title={w.title} sub={w.subtitle} image={w.image} onClick={() => (w.kind === 'movie' ? openMovie(w.itemId) : w.seriesId && openSeries(w.seriesId))} />
+            <LandCard key={w.key} title={w.title} sub={w.subtitle} image={w.image} onClick={() => (w.kind === 'replay' ? void resume(w) : w.kind === 'movie' ? openMovie(w.itemId) : w.seriesId && openSeries(w.seriesId))} />
           ))}
         </Rail>
       )}

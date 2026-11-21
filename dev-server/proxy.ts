@@ -11,6 +11,9 @@ import { rewriteM3u8, isM3u8 } from '../src/core/net/m3u8Rewrite.ts';
  */
 const DEFAULT_UA = 'VLC/3.0.20 LibVLC/3.0.20';
 const WIKI_UA = 'CyberIPTV/1.0 (https://github.com/pickywawa/cybertv; IPTV player channel logos)';
+/** france.tv CDNs refuse non-browser agents */
+const BROWSER_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+const BROWSER_HOSTS = /(^|\.)ftven\.fr$/i;
 const proxify = (u: string) => `/proxy?u=${encodeURIComponent(u)}`;
 
 export function devProxyPlugin(): Plugin {
@@ -43,7 +46,8 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
     return res.end('missing or invalid u');
   }
   // Wikimedia (iptv-org logos) throttles generic agents: identify the app as its policy asks
-  const ua = /(^|\.)wikimedia\.org$/i.test(new URL(target).hostname) ? WIKI_UA : qs.get('ua') || DEFAULT_UA;
+  const host = new URL(target).hostname;
+  const ua = /(^|\.)wikimedia\.org$/i.test(host) ? WIKI_UA : BROWSER_HOSTS.test(host) ? BROWSER_UA : qs.get('ua') || DEFAULT_UA;
   const headers: Record<string, string> = { 'user-agent': ua, accept: '*/*' };
   if (req.headers.range) headers.range = String(req.headers.range);
   const ac = new AbortController();

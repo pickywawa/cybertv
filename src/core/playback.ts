@@ -11,6 +11,7 @@ import { serversOf, serverLabel } from './sources/servers';
 import { normalizeServer } from './sources/xtream';
 import { isAndroidApp } from './platform';
 import { t } from './i18n';
+import { officialFor, resolveOfficialLive, withTimeout } from './replay';
 
 export const engineKind = (): Engine => (isAndroidApp ? 'native' : 'web');
 
@@ -108,6 +109,9 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
   }
   const uniq = withBackupServers(finalizeCandidates(candidates, false, () => ''), byId);
   candidates.length = 0;
+  // public channels: the broadcaster's own free stream first (better picture), the provider as backup
+  const official = !catchup ? await officialCandidate(ch) : null;
+  if (official) candidates.push(official);
   candidates.push(...uniq);
   return {
     kind: 'live',
@@ -121,6 +125,18 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
     live: !catchup,
     catchup,
   };
+}
+
+async function officialCandidate(ch: Channel): Promise<PlayRequest['candidates'][number] | null> {
+  const profile = useApp.getState().profile;
+  const o = officialFor(ch);
+  if (!o || profile?.officialLive === false) return null;
+  try {
+    const s = await withTimeout(resolveOfficialLive(o, profile?.lang || 'fr'), 4000);
+    return { url: s.url, label: `${t('replay.official')} · ${s.label}`, quality: 'FHD', sourceId: 'official' };
+  } catch {
+    return null; // abroad, network error: provider streams only
+  }
 }
 
 export async function playMovieRequest(m: Movie, startAt?: number): Promise<PlayRequest> {

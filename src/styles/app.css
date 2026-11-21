@@ -713,3 +713,10 @@ a.btn { text-decoration: none; }
 .score-chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 4px 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); font-weight: 800; font-variant-numeric: tabular-nums; font-size: .95rem; }
 .score-chip.live i { width: 8px; height: 8px; border-radius: 50%; background: var(--live); animation: pulse 1.4s infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
+
+/* Replay */
+.rp-prov { display: inline-block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-right: 10px; vertical-align: 0.18em; background: var(--surface-2); color: var(--text); }
+.rp-prov.arte { background: #fa481c; color: #fff; }
+.rp-prov.francetv { background: #2c40f5; color: #fff; }
+.hero .rp-prov, .detail-hero .rp-prov { margin-bottom: 10px; }
+.tab-replay .chips { margin-top: 4px; }

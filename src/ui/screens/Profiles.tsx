@@ -183,6 +183,12 @@ export function ProfileEdit({ profileId }: { profileId?: string }) {
           on={p.subsOnline !== false}
           onChange={(v) => void patch({ subsOnline: v })}
         />
+        <Toggle
+          label={t('replay.officialLive')}
+          sub={t('replay.officialLiveHint')}
+          on={p.officialLive !== false}
+          onChange={(v) => void patch({ officialLive: v })}
+        />
         <div className="btn-row" style={{ marginTop: 20 }}>
           {confirmDel ? (
             <>

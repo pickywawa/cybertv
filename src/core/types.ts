@@ -30,6 +30,8 @@ export interface Profile {
   subMode?: 'off' | 'auto' | 'always';
   /** fetch subtitles from OpenSubtitles when the stream has none in a preferred language (default on) */
   subsOnline?: boolean;
+  /** public channels (France 2…, Arte): play the broadcaster's own free stream first (default on) */
+  officialLive?: boolean;
   createdAt: number;
   lastSyncAt?: number;
 }
@@ -226,7 +228,8 @@ export interface Program {
   episodeNum?: string;
 }
 
-export type ItemKind = 'live' | 'movie' | 'series' | 'episode';
+/** `replay`: a free replay video (ARTE, france.tv), itemId = replay id */
+export type ItemKind = 'live' | 'movie' | 'series' | 'episode' | 'replay';
 
 export interface WatchState {
   profileId: string;

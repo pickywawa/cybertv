@@ -42,6 +42,7 @@ import androidx.media3.common.VideoSize;
 import androidx.media3.common.text.CueGroup;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -71,6 +72,8 @@ import java.util.Locale;
 @UnstableApi
 @CapacitorPlugin(name = "CyberNative")
 public class CyberNativePlugin extends Plugin {
+    private static final String BROWSER_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+
     private static final int BG = Color.parseColor("#0b0b0d");
     static CyberNativePlugin instance;
 
@@ -383,11 +386,19 @@ public class CyberNativePlugin extends Plugin {
     private void ensurePlayer() {
         if (player != null) return;
         Context ctx = getContext();
-        DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
-                .setUserAgent("VLC/3.0.20 LibVLC/3.0.20")
+        // VLC's agent by default (IPTV panels expect it); france.tv's CDNs only accept a browser
+        DefaultHttpDataSource.Factory base = new DefaultHttpDataSource.Factory()
+                .setDefaultRequestProperties(java.util.Collections.singletonMap("User-Agent", "VLC/3.0.20 LibVLC/3.0.20"))
                 .setAllowCrossProtocolRedirects(true)
                 .setConnectTimeoutMs(12000)
                 .setReadTimeoutMs(20000);
+        ResolvingDataSource.Factory http = new ResolvingDataSource.Factory(base, spec -> {
+            String host = spec.uri.getHost();
+            if (host != null && (host.equals("ftven.fr") || host.endsWith(".ftven.fr"))) {
+                return spec.withAdditionalHeaders(java.util.Collections.singletonMap("User-Agent", BROWSER_UA));
+            }
+            return spec;
+        });
         // FFmpeg audio (AC3 / E-AC3 / DTS…) is used only when the device has no hardware decoder
         DefaultRenderersFactory renderers = new DefaultRenderersFactory(ctx)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)

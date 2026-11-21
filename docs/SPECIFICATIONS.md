@@ -233,8 +233,8 @@ EnrichCache    { key, provider, payload, fetchedAt, ttl }
 
 ### 5.2 Navigation globale
 
-- **Android TV / grand écran** : barre de navigation en haut (Accueil · Recherche · TV · Chaînes · Mes vidéos) + avatar profil à droite. Retour = remonter d'un niveau, puis focus sur la barre, puis confirmation de sortie.
-- **Mobile** : barre d'onglets en bas (Accueil · Recherche · En direct · Chaînes · Plus).
+- **Android TV / grand écran** : barre de navigation en haut (Accueil · Recherche · TV · Replay · Mes vidéos) + avatar profil à droite. Retour = remonter d'un niveau, puis focus sur la barre, puis confirmation de sortie.
+- **Mobile** : barre d'onglets en bas (Accueil · Recherche · En direct · Replay · Mes vidéos).
 - Focus visible et généreux sur TV (agrandissement 1.08 + liseré accent), mémorisation du focus par rail.
 
 ### 5.3 Accueil (VOD & séries, pas de TV)
@@ -463,6 +463,20 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - Synchro : une liste illisible ou en échec (films, séries) n'est plus traitée comme « liste vide ». La source passe en « Dégradée » et garde son catalogue. Aucune suppression si la nouvelle liste est vide ou chute de plus de 70 % sur un gros catalogue. Une copie préchargée illisible est ignorée au profit du réseau. Une resynchro complète unique a lieu après la mise à jour.
 - Recherche : l'index existant répond tout de suite, et la reconstruction se fait par morceaux en arrière-plan puis bascule d'un coup. L'index est enregistré pour un démarrage à froid immédiat. Le programme TV a son propre index et s'affiche en second. Les résultats sont mémorisés par requête. Avec 31 000 titres : 9 à 31 ms par frappe.
 - Écrans : un garde-fou affiche « Réessayer » au lieu d'un écran noir en cas d'erreur d'affichage.
+
+### Replay gratuit et flux officiels (V1.6)
+- L'onglet « Replay » remplace l'onglet « Chaînes ». La page d'une chaîne reste accessible depuis le direct et le guide.
+- Il présente le replay gratuit d'ARTE et de france.tv, lu depuis leurs services publics :
+  - ARTE : API arte.tv (pages, collections, configuration du lecteur), HLS jusqu'en 1080p, sans DRM ;
+  - france.tv : API des applis mobiles (pages de France 2, 3, 4 et 5, programmes) et service vidéo des lecteurs, interrogé comme un appareil iOS pour obtenir du HLS sans DRM, avec un jeton Akamai.
+- L'écran comprend une bannière, un filtre Tout / ARTE / france.tv, les directs officiels, « Continuer la lecture » et des rails par thème. Les séries ont une page avec leurs saisons. Le catalogue est gardé 3 h.
+- Lecture et reprise : type `replay`, avec reprise dans « Continuer la lecture ». La limite d'âge parentale s'applique selon la classification de la chaîne.
+- Flux officiels en priorité pour France 2, France 3, France 4, France 5, franceinfo et Arte. La chaîne de la source est reconnue par son nom ou par son identifiant iptv-org. Le flux de la chaîne est essayé en premier (1080p), puis la source prend le relais. La résolution du flux est limitée à 4 s et mise en cache 30 min. Le réglage se trouve dans le profil (activé par défaut).
+- Les CDN de france.tv refusent l'agent VLC : un agent navigateur est envoyé pour `*.ftven.fr` (lecteur Android, proxy de développement et de la version ordinateur).
+- Limites :
+  - beaucoup de vidéos ne sont visibles que depuis la France (ARTE : surtout l'Europe) ;
+  - TF1+, M6+ et Canal+ ne sont pas intégrables (compte obligatoire et DRM) ;
+  - ces API ne sont pas documentées publiquement et peuvent changer.
 
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.

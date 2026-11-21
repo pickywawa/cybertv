@@ -341,7 +341,7 @@ export async function continueWatching(profileId: string): Promise<WatchState[]>
       continue;
     }
     const done = w.completed || isFinished(w.positionSec, w.durationSec);
-    if (w.kind === 'movie') {
+    if (w.kind === 'movie' || w.kind === 'replay') {
       if (done || w.positionSec < 30) continue;
       out.push(w);
       continue;

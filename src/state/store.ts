@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 import type { PlayRequest, Profile, SyncProgress, ThemeId, Lang } from '@/core/types';
 import type { UpdateState } from '@/core/updater';
+import type { ReplayItem } from '@/core/replay/types';
 
-export type TabId = 'home' | 'search' | 'tv' | 'channels' | 'myvideos' | 'settings';
+export type TabId = 'home' | 'search' | 'tv' | 'replay' | 'myvideos' | 'settings';
 
 export type Route =
   | { name: 'movie'; id: string }
   | { name: 'series'; id: string }
   | { name: 'channel'; id: string }
+  | { name: 'replay'; id: string; item?: ReplayItem }
   | { name: 'guide'; channelId?: string }
   | { name: 'grid'; kind: 'movie' | 'series'; title: string; filter: GridFilter }
   | { name: 'settings-section'; section: SettingsSection }

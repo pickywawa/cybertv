@@ -95,6 +95,7 @@ public class CyberNativePlugin extends Plugin {
 
     @Override
     public void load() {
+        Updater.onLaunch(getContext());
         instance = this;
         secure = new SecureStore(getContext());
         proxy = new LocalProxy(getContext().getCacheDir());
@@ -113,6 +114,96 @@ public class CyberNativePlugin extends Plugin {
         r.put("proxyPort", proxy.getPort());
         r.put("isTv", isTv());
         r.put("sdk", Build.VERSION.SDK_INT);
+        call.resolve(r);
+    }
+
+    // ───────────────────────── self-update (see Updater) ─────────────────────────
+
+    @PluginMethod
+    public void updateInfo(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("versionCode", Updater.versionCode(getContext()));
+        r.put("versionName", Updater.versionName(getContext()));
+        String web = Updater.activeWebVersion(getContext());
+        if (web != null) r.put("webVersion", web);
+        r.put("canInstall", Updater.canInstall(getContext()));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void updateBootOk(PluginCall call) {
+        Updater.bootOk(getContext());
+        call.resolve();
+    }
+
+    /** download + unpack a web bundle off the plugin thread; `apply` reloads the WebView on it right away */
+    @PluginMethod
+    public void updateWeb(PluginCall call) {
+        String url = call.getString("url");
+        String version = call.getString("version");
+        String sha = call.getString("sha256");
+        boolean apply = Boolean.TRUE.equals(call.getBoolean("apply", false));
+        if (url == null || version == null) {
+            call.reject("url and version required");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                java.io.File dir = Updater.installWebBundle(getContext(), url, version, sha);
+                if (apply) getActivity().runOnUiThread(() -> getBridge().setServerBasePath(dir.getAbsolutePath()));
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("web update failed: " + e.getMessage());
+            }
+        }, "cyber-update-web").start();
+    }
+
+    /** switch to the downloaded web bundle now (reloads the page) */
+    @PluginMethod
+    public void updateApplyWeb(PluginCall call) {
+        String path = getContext().getSharedPreferences("CapWebViewSettings", Context.MODE_PRIVATE).getString("serverBasePath", null);
+        if (path == null || path.isEmpty()) {
+            call.reject("no bundle");
+            return;
+        }
+        call.resolve();
+        getActivity().runOnUiThread(() -> getBridge().setServerBasePath(path));
+    }
+
+    @PluginMethod
+    public void updateDownloadApk(PluginCall call) {
+        String url = call.getString("url");
+        if (url == null) {
+            call.reject("url required");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                Updater.downloadApk(getContext(), url);
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("download failed: " + e.getMessage());
+            }
+        }, "cyber-update-apk").start();
+    }
+
+    /** hands the downloaded APK to the system installer, or opens the permission screen first */
+    @PluginMethod
+    public void updateInstallApk(PluginCall call) {
+        java.io.File apk = new java.io.File(new java.io.File(getContext().getCacheDir(), "updates"), "update.apk");
+        if (!apk.exists()) {
+            call.reject("no apk downloaded");
+            return;
+        }
+        JSObject r = new JSObject();
+        if (!Updater.canInstall(getContext())) {
+            Updater.openInstallPermission(getActivity());
+            r.put("needsPermission", true);
+            call.resolve(r);
+            return;
+        }
+        Updater.install(getActivity(), apk);
+        r.put("needsPermission", false);
         call.resolve(r);
     }
 

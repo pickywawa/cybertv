@@ -57,3 +57,4 @@ export const IcGlobe = S('M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 
 export const IcLive = S('M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8');
 export const IcVolume = S('M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13');
 export const IcVolumeOff = S('M11 5 6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6');
+export const IcLibrary = S('M4 5h11v14H4zM18 5v14M21 7v10M8 9.5v5l4-2.5z');

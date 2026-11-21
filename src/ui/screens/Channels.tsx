@@ -32,8 +32,8 @@ export function Channels() {
 
   if (!channels) return <div className="spinner big" style={{ margin: '120px auto' }} />;
   return (
-    <div style={{ paddingTop: 20 }}>
-      <h1 className="container" style={{ fontSize: '2rem', fontWeight: 700, marginBottom: 8 }}>{t('channels.title')}</h1>
+    <div className="tab-channels">
+      <h1 className="container tab-h1" style={{ fontSize: '2rem', fontWeight: 700, marginBottom: 8 }}>{t('channels.title')}</h1>
       {favSet.size > 0 && (
         <Rail title={t('universe.favorites')}>
           {channels.filter((c) => favSet.has(c.groupKey)).map((c) => (

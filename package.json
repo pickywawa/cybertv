@@ -1,7 +1,7 @@
 {
   "name": "cybertv",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -11,7 +11,8 @@
     "test": "vitest run",
     "android:sync": "vite build && cap sync android",
     "android:run": "cap run android --live-reload --external",
-    "android:apk": "vite build && cap sync android && cd android && ./gradlew assembleDebug"
+    "android:apk": "vite build && cap sync android && cd android && ./gradlew assembleDebug",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.2",
@@ -39,5 +40,9 @@
     "typescript": "5.9",
     "vite": "^8.3.8",
     "vitest": "^5.1.1"
+  },
+  "cyber": {
+    "updateUrl": "https://github.com/pickywawa/cybertv/releases/latest/download/update.json",
+    "minNativeCode": 3
   }
 }

@@ -6,7 +6,7 @@ import { secureGet, sourcePassKey } from '@/core/secure';
 import { useApp } from '@/state/store';
 import { runSync } from '@/app/services';
 import { PageHeader } from '../components/BackButton';
-import { SourceForm, draftFromSource, draftValid, emptyDraft, type SourceDraft } from '../components/SourceForm';
+import { SourceForm, draftFromSource, draftInput, draftValid, emptyDraft, type SourceDraft } from '../components/SourceForm';
 
 export function SourceEdit({ sourceId }: { sourceId?: string }) {
   const profile = useApp((s) => s.profile)!;
@@ -21,11 +21,7 @@ export function SourceEdit({ sourceId }: { sourceId?: string }) {
   }, [sourceId]);
   if (!draft) return null;
   const save = async () => {
-    await saveSource(
-      profile.id,
-      { type: draft.type, label: draft.label, url: draft.url, username: draft.username, password: draft.password, epgUrls: draft.epg.split(/\s+/).filter(Boolean) },
-      sourceId,
-    );
+    await saveSource(profile.id, draftInput(draft), sourceId);
     pop();
     void runSync(profile.id);
   };
@@ -38,7 +34,7 @@ export function SourceEdit({ sourceId }: { sourceId?: string }) {
           <button className="btn ghost" data-f onClick={() => pop()}>{t('common.cancel')}</button>
           <button className="btn primary" data-f disabled={!draftValid(draft)} onClick={() => void save()}>{t('common.save')}</button>
           {import.meta.env.DEV && !sourceId && (
-            <button className="btn" data-f onClick={() => setDraft({ type: 'xtream', label: 'Démo', url: `${location.origin}/mock-xtream`, username: 'demo', password: 'demo', epg: '' })}>
+            <button className="btn" data-f onClick={() => setDraft({ type: 'xtream', label: 'Démo', url: `${location.origin}/mock-xtream`, username: 'demo', password: 'demo', epg: '', backups: [] })}>
               {t('onboard.demo')}
             </button>
           )}

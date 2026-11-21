@@ -8,6 +8,7 @@ import {
 } from '../util/text';
 import { parseXmltv, type XmltvChannel } from '../epg/xmltv';
 import { channelCountry, channelLangs, detectLangs } from '../util/lang';
+import { serversOf, serverLabel } from '../sources/servers';
 
 export type Progress = (p: SyncProgress) => void;
 
@@ -333,14 +334,31 @@ export async function epgUrlsForProfile(profileId: string, secrets: Record<strin
     if (s.type === 'xtream') urls.push(new XtreamClient({ server: s.url, username: s.username!, password: secrets[s.id] || '' }).xmltvUrl());
     else urls.push(...((await getMeta<string[]>(`epg:auto:${s.id}`)) || []));
   }
+  // free national guide as a last resort (only fills channels no other guide covers)
+  const prof = await db.profiles.get(profileId);
+  const country = prof?.country || (prof?.lang === 'fr' ? 'FR' : undefined);
+  if (country && DEFAULT_EPG[country]) urls.push(DEFAULT_EPG[country]);
   return [...new Set(urls.filter(Boolean))];
 }
+
+/** public XMLTV guides (ids like "TF1.fr", matching iptv-org's "tf1.fr@SD") */
+const DEFAULT_EPG: Record<string, string> = {
+  FR: 'https://xmltvfr.fr/xmltv/xmltv_tnt.xml.gz',
+};
+
+/** "tf1.fr@sd" → "tf1.fr" (iptv-org feed suffix) */
+const epgBase = (id: string) => id.split('@')[0];
 
 export async function syncEpg(profileId: string, secrets: Record<string, string | undefined>, progress: Progress) {
   const urls = await epgUrlsForProfile(profileId, secrets);
   if (!urls.length) return;
   const channels = await db.channels.where('profileId').equals(profileId).toArray();
   const byEpg = new Set(channels.map((c) => c.epgId).filter(Boolean) as string[]);
+  const byBase = new Map<string, Channel[]>();
+  for (const c of channels) if (c.epgId && c.epgId.includes('@')) {
+    const b = epgBase(c.epgId);
+    (byBase.get(b) || byBase.set(b, []).get(b)!).push(c);
+  }
   const byName = new Map<string, Channel[]>();
   for (const c of channels) {
     const k = norm(c.name);
@@ -363,6 +381,7 @@ export async function syncEpg(profileId: string, secrets: Record<string, string 
         to,
         onChannels: (xch: XmltvChannel[]) => {
           const map = new Map<string, string>();
+          const docIds = new Set(xch.map((x) => x.id.toLowerCase()));
           for (const x of xch) {
             const xid = x.id.toLowerCase();
             if (covered.has(xid)) continue;
@@ -370,10 +389,18 @@ export async function syncEpg(profileId: string, secrets: Record<string, string 
               map.set(x.id, xid);
               continue;
             }
+            // same channel id without the feed suffix
+            const base = byBase.get(xid);
+            if (base?.length) {
+              for (const h of base) channelPatches.push({ id: h.id, epgId: xid });
+              map.set(x.id, xid);
+              continue;
+            }
             for (const n of x.names) {
               const hits = byName.get(norm(cleanName(n)));
               if (hits?.length) {
-                for (const h of hits) if (!h.epgId || !byEpg.has(h.epgId)) channelPatches.push({ id: h.id, epgId: xid });
+                // name match unless the channel's own id is served by this guide
+                for (const h of hits) if (!h.epgId || (!docIds.has(h.epgId) && !covered.has(h.epgId))) channelPatches.push({ id: h.id, epgId: xid });
                 map.set(x.id, xid);
                 break;
               }
@@ -406,17 +433,37 @@ export async function syncEpg(profileId: string, secrets: Record<string, string 
 
 // ───────────────────────────── Orchestration ─────────────────────────────
 
+/**
+ * Syncs a source on the server in use; when it fails, tries the backup servers in order.
+ * The first one that works becomes the server in use (persisted, so the next start uses it too).
+ */
 export async function syncSource(src: Source, password: string | undefined, progress: Progress): Promise<Source> {
   progress({ sourceId: src.id, step: 'start' });
-  try {
-    if (src.type === 'xtream') await syncXtream(src, password || '', progress);
-    else await syncM3u(src, progress);
-    src.status = 'ok';
-    src.lastError = undefined;
+  const servers = serversOf(src);
+  const errors: string[] = [];
+  let ok = false;
+  for (const [i, server] of servers.entries()) {
+    src.url = server;
+    if (i > 0) progress({ sourceId: src.id, step: 'start', message: `Serveur de secours : ${serverLabel(server)}` });
+    try {
+      if (src.type === 'xtream') await syncXtream(src, password || '', progress);
+      else await syncM3u(src, progress);
+      ok = true;
+      break;
+    } catch (e) {
+      errors.push(`${serverLabel(server)} : ${(e as Error).message.replace(/ — .*$/, '')}`);
+    }
+  }
+  if (ok) {
+    src.status = errors.length ? 'degraded' : 'ok';
+    // keep a trace of the failover for the source card
+    src.lastError = errors.length ? `Bascule sur ${serverLabel(src.url)} (${errors.join(' · ')})` : undefined;
     src.lastSyncAt = Date.now();
-  } catch (e) {
+  } else {
+    // nothing works: stay on the first server for the next attempt
+    src.url = servers[0];
     src.status = 'down';
-    src.lastError = (e as Error).message;
+    src.lastError = errors.join(' · ');
     progress({ sourceId: src.id, step: 'error', message: src.lastError });
   }
   await db.sources.put(src);
@@ -432,8 +479,13 @@ export async function syncProfile(profileId: string, secrets: Record<string, str
   progress({ step: 'done' });
 }
 
-/** Light connectivity check used by the onboarding "Tester" button and health checks */
-export async function testSource(
+export interface ServerTest {
+  server: string;
+  ok: boolean;
+  message: string;
+}
+
+async function testOne(
   src: Pick<Source, 'type' | 'url' | 'username'>,
   password?: string,
 ): Promise<{ ok: boolean; message: string; account?: Source['account'] }> {
@@ -458,4 +510,22 @@ export async function testSource(
   } catch (e) {
     return { ok: false, message: (e as Error).message };
   }
+}
+
+/**
+ * "Tester" button: tries the servers in order and stops at the first one that answers.
+ * `server` is the one to use (the UI switches to it), `tried` lists every attempt.
+ */
+export async function testSource(
+  src: Pick<Source, 'type' | 'url' | 'username' | 'servers'>,
+  password?: string,
+): Promise<{ ok: boolean; message: string; account?: Source['account']; server?: string; tried: ServerTest[] }> {
+  const tried: ServerTest[] = [];
+  for (const server of serversOf(src)) {
+    const r = await testOne({ ...src, url: server }, password);
+    tried.push({ server, ok: r.ok, message: r.message });
+    if (r.ok) return { ...r, server, tried };
+  }
+  const last = tried[tried.length - 1];
+  return { ok: false, message: last?.message || 'no server', tried };
 }

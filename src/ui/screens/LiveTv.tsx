@@ -14,9 +14,9 @@ import { openChannel, playChannel } from '../actions';
 import { isTvMode } from '@/core/platform';
 import { langPrefs, profileCountry } from '@/core/prefs';
 import { matchesLangs, rankChannels } from '@/core/channelRank';
-import { flagOf } from '@/core/util/lang';
+import { flagOf, langName } from '@/core/util/lang';
 
-const ORDER: Universe[] = ['general', 'sport', 'cinema', 'kids', 'news', 'series', 'docs', 'ent', 'music', 'other', 'adult'];
+const ORDER: Universe[] = ['sport', 'cinema', 'kids', 'news', 'series', 'docs', 'ent', 'music', 'other', 'adult'];
 type Cat = 'fav' | 'all' | Universe;
 
 export function LiveTv() {
@@ -25,15 +25,19 @@ export function LiveTv() {
   const unlocked = useApp((s) => s.unlockedAdult);
   const push = useApp((s) => s.push);
   const [mode, setMode] = useState<'now' | 'tonight'>('now');
-  const [cat, setCat] = useState<Cat>(() => (sessionStorage.getItem('tv.cat') as Cat) || 'all');
+  const [cat, setCat] = useState<Cat>(() => { const c = sessionStorage.getItem('tv.cat') as Cat | null; return c && c !== 'general' ? c : 'all'; });
   const [menuFor, setMenuFor] = useState<Channel | null>(null);
   const now = useNow(30000);
   const minute = Math.floor(now / 60000);
   const narrow = useMediaQuery('(max-width: 760px)') && !isTvMode();
 
-  const [allLangs, setAllLangs] = useState(() => sessionStorage.getItem('tv.allLangs') === '1');
+  // with two audio languages in the profile, the user can narrow the list to one of them
+  const [onlyLang, setOnlyLang] = useState<string | null>(() => sessionStorage.getItem('tv.lang'));
   useEffect(() => sessionStorage.setItem('tv.cat', cat), [cat]);
-  useEffect(() => sessionStorage.setItem('tv.allLangs', allLangs ? '1' : '0'), [allLangs]);
+  useEffect(() => {
+    if (onlyLang) sessionStorage.setItem('tv.lang', onlyLang);
+    else sessionStorage.removeItem('tv.lang');
+  }, [onlyLang]);
   const prefs = useMemo(() => langPrefs(profile), [profile]);
   const country = profileCountry(profile);
 
@@ -44,16 +48,20 @@ export function LiveTv() {
   const evening = useAsync(() => (mode === 'tonight' ? tonight(settings.tonightStartMin) : Promise.resolve(new Map<string, Program>())), [mode, settings.tonightStartMin], { epg: true });
 
   const favKeys = useMemo(() => new Set((favs || []).map((f) => f.key.replace(/^live:/, ''))), [favs]);
-  // channels in the user's audio languages (untagged ones included); fall back to everything
+  // only channels in the user's audio languages (untagged ones included); everything if that leaves too few
   const langChannels = useMemo(() => {
     if (!channels) return undefined;
     const mine = channels.filter((c) => matchesLangs(c, prefs));
-    return { mine, hasOthers: mine.length < channels.length, usable: mine.length >= 5 };
+    const pick = mine.length >= 5 ? mine : channels;
+    // languages of the profile actually present in the catalogue → a choice only when there are two
+    const present = prefs.audio.filter((l) => pick.some((c) => c.langs?.includes(l)));
+    return { pick, choices: present.length > 1 ? present : [] };
   }, [channels, prefs]);
-  const pool = useMemo(
-    () => (!channels || !langChannels ? undefined : allLangs || !langChannels.usable ? channels : langChannels.mine),
-    [channels, langChannels, allLangs],
-  );
+  const pool = useMemo(() => {
+    if (!langChannels) return undefined;
+    const l = onlyLang && langChannels.choices.includes(onlyLang) ? onlyLang : null;
+    return l ? langChannels.pick.filter((c) => !c.langs?.length || c.langs.includes(l)) : langChannels.pick;
+  }, [langChannels, onlyLang]);
 
   const cats = useMemo(() => {
     const present = new Set((pool || []).map((c) => c.universe));
@@ -102,11 +110,11 @@ export function LiveTv() {
       </div>
       <div className="chips-bar">
         <div className="chips" data-row>
-          {langChannels?.hasOthers && langChannels.usable && (
-            <button data-f className={`chip lang-chip ${allLangs ? '' : 'active'}`} onClick={() => setAllLangs(!allLangs)} title={t('tv.myLangs')}>
-              {allLangs ? `🌐 ${t('tv.allLangs')}` : `${prefs.audio.map(flagOf).join(' ')} ${t('tv.myLangs')}`}
+          {langChannels?.choices.map((l) => (
+            <button key={l} data-f className={`chip lang-chip ${onlyLang === l ? 'active' : ''}`} onClick={() => setOnlyLang(onlyLang === l ? null : l)} title={langName(l)}>
+              {flagOf(l)} {l.toUpperCase()}
             </button>
-          )}
+          ))}
           {(['fav', 'all', ...cats] as Cat[]).map((c) => (
             <button key={c} data-f className={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>
               {label(c)}

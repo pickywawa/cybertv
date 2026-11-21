@@ -12,6 +12,7 @@ import { canCatchup } from '@/core/sources/urls';
 import { nowNext, programsFor, saveProgress } from '@/core/repo';
 import { fmtDuration, fmtTime, t } from '@/core/i18n';
 import { useApp } from '@/state/store';
+import { rememberServer } from '@/core/profiles';
 import { langPrefs, subMode } from '@/core/prefs';
 import { toLang } from '@/core/util/lang';
 import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
@@ -150,6 +151,14 @@ export function Player({ req }: { req: PlayRequest }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracks]);
+
+  // a stream on a backup server plays: that server becomes the one in use for its source
+  useEffect(() => {
+    const c = cands[candIdx];
+    if (st.status !== 'playing' || !c?.server) return;
+    void rememberServer(c.sourceId, c.server).then((switched) => switched && toast(t('sources.switched', { host: new URL(c.server!).host })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [st.status === 'playing', candIdx, cands]);
 
   const nextCandidate = useCallback(() => {
     setCandIdx((i) => {
@@ -309,14 +318,15 @@ export function Player({ req }: { req: PlayRequest }) {
       if (!e) return;
       const s = stRef.current;
       if (mode === 'vod') {
-        if (s.duration) e.seek(r * s.duration);
+        const d = vodDuration(s, req.durationSec);
+        if (d) e.seek(r * d);
         return;
       }
       const target = winStart + r * (winEnd - winStart);
       if (mode === 'shift' && target >= shiftStart && (target - shiftStart) / 1000 <= Math.max(s.duration, s.buffered)) e.seek((target - shiftStart) / 1000);
       else void goShift(target);
     },
-    [mode, winStart, winEnd, shiftStart, goShift],
+    [mode, winStart, winEnd, shiftStart, goShift, req.durationSec],
   );
 
   const startOver = useCallback(() => {
@@ -438,24 +448,37 @@ export function Player({ req }: { req: PlayRequest }) {
   }, [panel, uiVisible, st.status]);
 
   // ───────── progress persistence & next episode ─────────
+  const persist = useCallback(
+    (s: EngineState) => {
+      const d = vodDuration(s, req.durationSec);
+      const ended = s.status === 'ended';
+      if (!ended && s.position < 5) return;
+      void saveProgress({
+        profileId: profile.id,
+        key: `${req.kind}:${req.itemId}`,
+        kind: req.kind,
+        itemId: req.itemId,
+        seriesId: req.seriesId,
+        title: req.title,
+        subtitle: req.subtitle,
+        image: req.image,
+        positionSec: ended ? d || s.position : s.position,
+        durationSec: d,
+        completed: ended ? true : undefined,
+      });
+    },
+    [req, profile.id],
+  );
   useEffect(() => {
-    if (mode !== 'vod' || !st.duration) return;
+    if (mode !== 'vod') return;
     if (Math.abs(st.position - lastPos.current) < 10 && st.status !== 'paused' && st.status !== 'ended') return;
     lastPos.current = st.position;
-    void saveProgress({
-      profileId: profile.id,
-      key: `${req.kind}:${req.itemId}`,
-      kind: req.kind,
-      itemId: req.itemId,
-      seriesId: req.seriesId,
-      title: req.title,
-      subtitle: req.subtitle,
-      image: req.image,
-      positionSec: st.status === 'ended' ? st.duration : st.position,
-      durationSec: st.duration,
-      completed: st.status === 'ended' ? true : undefined,
-    });
-  }, [st.position, st.status, st.duration, mode, req, profile.id]);
+    persist(st);
+  }, [st, mode, persist]);
+  // last position when leaving the player (the 10 s throttle would lose up to 10 s)
+  useEffect(() => () => {
+    if (mode === 'vod' && lastPos.current >= 0) persist(stRef.current);
+  }, [mode, persist]);
 
   useEffect(() => {
     if (req.kind !== 'episode' || !st.duration || nextEp) return;
@@ -529,11 +552,12 @@ export function Player({ req }: { req: PlayRequest }) {
   let bufRatio = 0;
   let leftLabel = '';
   let rightLabel = '';
+  const vodDur = vodDuration(st, req.durationSec);
   if (mode === 'vod') {
-    ratio = st.duration ? st.position / st.duration : 0;
-    bufRatio = st.duration ? st.buffered / st.duration : 0;
+    ratio = vodDur ? Math.min(1, st.position / vodDur) : 0;
+    bufRatio = vodDur ? Math.min(1, st.buffered / vodDur) : 0;
     leftLabel = fmtDuration(st.position);
-    rightLabel = st.duration ? `-${fmtDuration(Math.max(0, st.duration - st.position))}` : '';
+    rightLabel = vodDur ? `-${fmtDuration(Math.max(0, vodDur - st.position))}` : '';
   } else {
     ratio = Math.min(1, Math.max(0, (playhead - winStart) / (winEnd - winStart)));
     bufRatio = Math.min(1, Math.max(0, (now - winStart) / (winEnd - winStart)));
@@ -630,7 +654,15 @@ export function Player({ req }: { req: PlayRequest }) {
               </button>
             )}
           </div>
-          <SeekBar ratio={ratio} buffered={bufRatio} onSeek={seekToRatio} onStep={(d) => seekBy(d)} disabled={mode === 'live' && !catchupOk} />
+          <SeekBar
+            ratio={ratio}
+            buffered={bufRatio}
+            onSeek={seekToRatio}
+            onStep={(d) => seekBy(d)}
+            onActivity={poke}
+            label={(r) => (mode === 'vod' ? (vodDur ? fmtDuration(r * vodDur) : '') : fmtTime(winStart + r * (winEnd - winStart)))}
+            disabled={(mode === 'live' && !catchupOk) || (mode === 'vod' && !vodDur)}
+          />
           <div className="times">
             <span>{leftLabel}</span>
             {mode === 'shift' && <span>{t('player.delayed')} · {fmtTime(playhead)}</span>}
@@ -771,7 +803,21 @@ export function Player({ req }: { req: PlayRequest }) {
   );
 }
 
-function SeekBar({ ratio, buffered, onSeek, onStep, disabled }: { ratio: number; buffered: number; onSeek: (r: number) => void; onStep: (d: number) => void; disabled?: boolean }) {
+/** VOD duration: engine value when known, else the catalogue duration (some MKV/TS report none) */
+function vodDuration(s: EngineState, fallback?: number): number {
+  return s.duration && isFinite(s.duration) && s.duration > 0 ? s.duration : fallback || 0;
+}
+
+function SeekBar(p: {
+  ratio: number;
+  buffered: number;
+  onSeek: (r: number) => void;
+  onStep: (d: number) => void;
+  onActivity: () => void;
+  label: (r: number) => string;
+  disabled?: boolean;
+}) {
+  const { ratio, buffered, onSeek, onStep, onActivity, label, disabled } = p;
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef(false);
   const [hover, setHover] = useState<number | null>(null);
@@ -780,10 +826,18 @@ function SeekBar({ ratio, buffered, onSeek, onStep, disabled }: { ratio: number;
     return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
   };
   const shown = hover ?? ratio;
+  const end = (e: React.PointerEvent, commit: boolean) => {
+    e.stopPropagation();
+    if (!drag.current) return;
+    drag.current = false;
+    if (commit) onSeek(at(e));
+    setHover(null);
+    onActivity();
+  };
   return (
     <div
       ref={ref}
-      className="seekbar"
+      className={`seekbar ${hover !== null ? 'dragging' : ''}`}
       data-f={disabled ? undefined : ''}
       data-row
       data-row-lock
@@ -796,16 +850,22 @@ function SeekBar({ ratio, buffered, onSeek, onStep, disabled }: { ratio: number;
       }}
       onPointerDown={(e) => {
         if (disabled) return;
-        drag.current = true;
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        setHover(at(e));
-      }}
-      onPointerMove={(e) => drag.current && setHover(at(e))}
-      onPointerUp={(e) => {
         e.stopPropagation();
+        drag.current = true;
+        // capture on the bar itself so the drag survives leaving it (and the UI never auto-hides mid-drag)
+        ref.current!.setPointerCapture(e.pointerId);
+        setHover(at(e));
+        onActivity();
+      }}
+      onPointerMove={(e) => {
         if (!drag.current) return;
+        setHover(at(e));
+        onActivity();
+      }}
+      onPointerUp={(e) => end(e, true)}
+      onPointerCancel={(e) => end(e, true)}
+      onLostPointerCapture={() => {
         drag.current = false;
-        onSeek(at(e));
         setHover(null);
       }}
     >
@@ -813,6 +873,7 @@ function SeekBar({ ratio, buffered, onSeek, onStep, disabled }: { ratio: number;
       <div className="buf" style={{ width: `${buffered * 100}%` }} />
       <div className="fill" style={{ width: `${shown * 100}%` }} />
       <div className="knob" style={{ left: `${shown * 100}%` }} />
+      {hover !== null && label(hover) && <div className="seek-tip" style={{ left: `${hover * 100}%` }}>{label(hover)}</div>}
     </div>
   );
 }

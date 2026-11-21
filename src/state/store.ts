@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { PlayRequest, Profile, SyncProgress, ThemeId, Lang } from '@/core/types';
+import type { UpdateState } from '@/core/updater';
 
 export type TabId = 'home' | 'search' | 'tv' | 'channels' | 'myvideos' | 'settings';
 
@@ -80,6 +81,8 @@ interface AppState {
   epgVersion: number;
   toasts: Toast[];
   unlockedAdult: boolean;
+  update: UpdateState;
+  updateDismissed: boolean;
 
   setScreen(s: AppState['screen']): void;
   setProfile(p: Profile | null): void;
@@ -112,6 +115,8 @@ export const useApp = create<AppState>((set, get) => ({
   epgVersion: 0,
   toasts: [],
   unlockedAdult: false,
+  update: { kind: 'none' },
+  updateDismissed: false,
 
   setScreen: (screen) => set({ screen }),
   setProfile: (profile) => set({ profile, stack: [], tab: 'home', unlockedAdult: false }),

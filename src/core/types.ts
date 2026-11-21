@@ -47,8 +47,10 @@ export interface Source {
   label: string;
   priority: number;
   enabled: boolean;
-  /** m3u: playlist url. xtream: server base url */
+  /** m3u: playlist url. xtream: server base url — the server currently in use (persisted after a failover) */
   url: string;
+  /** every server/playlist of this source, in the user's order (main first, then backups) */
+  servers?: string[];
   username?: string;
   /** password lives in the secure store, never in IndexedDB */
   epgUrls: string[];
@@ -242,7 +244,8 @@ export interface PlayRequest {
   image?: string;
   logo?: string;
   /** ordered candidate urls (fallback chain) */
-  candidates: { url: string; label: string; quality: Quality; sourceId: string }[];
+  /** `server`: Xtream server the url points to (a backup one is remembered once it plays) */
+  candidates: { url: string; label: string; quality: Quality; sourceId: string; server?: string }[];
   startAt?: number;
   live?: boolean;
   /** catch-up playback of a past/current program */

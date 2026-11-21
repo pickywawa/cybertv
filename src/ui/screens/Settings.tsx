@@ -8,7 +8,9 @@ import { secureGet, tmdbKey } from '@/core/secure';
 import { dataWorker, proxyCb } from '@/core/workers';
 import { loadSecrets } from '@/core/repo';
 import { useApp, applyTheme, type SettingsSection } from '@/state/store';
-import { runSync, startEnrichment } from '@/app/services';
+import { runSync, runUpdateCheck, startEnrichment } from '@/app/services';
+import { APP_VERSION } from '@/core/updater';
+import { serverLabel } from '@/core/sources/servers';
 import { setSmoothScroll } from '../spatial';
 import { isNative } from '@/core/platform';
 import { CyberNative } from '@/core/native';
@@ -24,7 +26,7 @@ export function Settings() {
   const push = useApp((s) => s.push);
   return (
     <div className="settings">
-      <h1>{t('settings.title')}</h1>
+      <h1 className="tab-h1">{t('settings.title')}</h1>
       <button className="list-item" data-f data-autofocus onClick={() => push({ name: 'profile-edit' })}>
         <span className="avatar" style={{ background: profile.color }}>{profile.emoji}</span>
         <span className="grow">
@@ -89,6 +91,9 @@ function SourcesSection() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700 }} className="ellipsis">{s.label} <span className="dim small">· {s.type.toUpperCase()} · {t('settings.priority', { n: i + 1 })}</span></div>
               <div className={`status ${s.status}`}>{t(`settings.status.${s.status}` as 'settings.status.ok')}{s.lastSyncAt ? ` · ${fmtDate(s.lastSyncAt, { day: 'numeric', month: 'short' })} ${fmtTime(s.lastSyncAt)}` : ''}</div>
+              {(s.servers?.length || 0) > 1 && (
+                <div className="small muted">{t('sources.activeServer', { host: serverLabel(s.url) })} · {s.servers!.indexOf(s.url) + 1}/{s.servers!.length}</div>
+              )}
               {s.counts && <div className="small muted">{s.counts.live} {t('sync.live').toLowerCase()} · {s.counts.vod} {t('sync.vod').toLowerCase()} · {s.counts.series} {t('sync.series').toLowerCase()}</div>}
               {s.account?.expiresAt && <div className="small muted">{t('onboard.expires', { date: fmtDate(s.account.expiresAt) })}{s.account.maxConn ? ` · ${s.account.maxConn} conn.` : ''}</div>}
               {s.lastError && <div className="small msg-ko clamp2">{s.lastError}</div>}
@@ -329,10 +334,37 @@ function CategoriesSection() {
 }
 
 function AboutSection() {
+  const update = useApp((s) => s.update);
+  const toast = useApp((s) => s.toast);
+  const [info, setInfo] = useState<{ versionCode: number; versionName: string; webVersion?: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (isNative) void CyberNative.updateInfo().then(setInfo).catch(() => {});
+  }, []);
+  const check = async () => {
+    setChecking(true);
+    await runUpdateCheck(true);
+    setChecking(false);
+    if (useApp.getState().update.kind === 'none') toast(t('update.upToDate'));
+    else useApp.setState({ updateDismissed: false });
+  };
   return (
     <div className="form">
       <p style={{ lineHeight: 1.6 }}>{t('settings.aboutText')}</p>
-      <p className="small muted">CyberIPTV 0.2.0 · Media3 / hls.js / mpegts.js · TMDB</p>
+      <p className="small muted">
+        CyberIPTV {info?.webVersion || APP_VERSION}
+        {info ? ` · app ${info.versionName} (${info.versionCode})` : ''} · Media3 / hls.js / mpegts.js · TMDB
+      </p>
+      {isNative ? (
+        <div className="btn-row">
+          <button className="btn" data-f disabled={checking} onClick={() => void check()}>
+            {checking ? <span className="spinner" /> : <IcRefresh />} {t('update.check')}
+          </button>
+          {update.kind !== 'none' && <span className="small">{update.kind === 'web-ready' ? t('update.webReady', { v: update.version }) : t('update.available', { v: update.version })}</span>}
+        </div>
+      ) : (
+        <p className="small dim">{t('update.webOnly')}</p>
+      )}
       <button className="btn" data-f onClick={async () => {
         if ('caches' in window) for (const k of await caches.keys()) await caches.delete(k);
         if (isNative) await CyberNative.clearImageCache().catch(() => {});

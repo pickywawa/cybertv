@@ -7,6 +7,8 @@ import { QUALITY_RANK, detectQuality } from './util/text';
 import { detectLangs, langScore, type LangPrefs } from './util/lang';
 import { langPrefs } from './prefs';
 import { useApp } from '@/state/store';
+import { serversOf, serverLabel } from './sources/servers';
+import { normalizeServer } from './sources/xtream';
 import { isNative } from './platform';
 import { t } from './i18n';
 
@@ -40,6 +42,26 @@ function versionLabel(rawName: string): string {
     if (l) parts.push(l.toUpperCase());
   }
   return parts.join(' · ');
+}
+
+/**
+ * Failover across a source's servers: every Xtream candidate is followed (after all candidates on
+ * the servers in use) by the same stream on each backup server — same panel, same ids/credentials.
+ */
+function withBackupServers(cands: PlayRequest['candidates'], byId: Map<string, Source>): PlayRequest['candidates'] {
+  const primary = cands.map((c) => {
+    const src = byId.get(c.sourceId);
+    return src?.type === 'xtream' ? { ...c, server: normalizeServer(src.url) } : c;
+  });
+  const backups: PlayRequest['candidates'] = [];
+  for (const c of primary) {
+    const src = byId.get(c.sourceId);
+    if (!src || src.type !== 'xtream' || !c.server || !c.url.startsWith(c.server)) continue;
+    for (const alt of serversOf(src).slice(1)) {
+      backups.push({ ...c, url: alt + c.url.slice(c.server.length), server: alt, label: `${c.label} · ${serverLabel(alt)}` });
+    }
+  }
+  return [...primary, ...backups];
 }
 
 /** unique, readable labels; identical urls removed */
@@ -84,7 +106,7 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
     const url = catchup ? catchupUrl(v, src, secrets[src.id], catchup.start, Math.min(catchup.stop, Date.now())) : liveUrl(v, src, secrets[src.id], engineKind());
     if (url) candidates.push({ url, label: label(v), quality: v.quality, sourceId: v.sourceId });
   }
-  const uniq = finalizeCandidates(candidates, false, () => '');
+  const uniq = withBackupServers(finalizeCandidates(candidates, false, () => ''), byId);
   candidates.length = 0;
   candidates.push(...uniq);
   return {
@@ -111,7 +133,7 @@ export async function playMovieRequest(m: Movie, startAt?: number): Promise<Play
         : (prefs ? langScore(a, prefs) - langScore(b, prefs) : 0) || order.get(a.sourceId)! - order.get(b.sourceId)!
           || (QUALITY_RANK[String(detectQuality(b.rawName))] ?? 0) - (QUALITY_RANK[String(detectQuality(a.rawName))] ?? 0));
   const multiSource = new Set(variants.map((v) => v.sourceId)).size > 1;
-  const candidates = finalizeCandidates(
+  const candidates = withBackupServers(finalizeCandidates(
     variants
       .map((v) => {
         const src = byId.get(v.sourceId)!;
@@ -120,7 +142,7 @@ export async function playMovieRequest(m: Movie, startAt?: number): Promise<Play
       .filter((c) => !!c.url),
     multiSource,
     (id) => byId.get(id)?.label || '',
-  );
+  ), byId);
   return {
     kind: 'movie', itemId: m.id, title: m.title, subtitle: [m.year, m.genres?.slice(0, 2).join(', ')].filter(Boolean).join(' · '),
     image: m.backdrop || m.poster, logo: m.logo, candidates, startAt, durationSec: m.durationSec,
@@ -137,7 +159,7 @@ export async function playEpisodeRequest(s: Series, ep: Episode, startAt?: numbe
     if (e) others.push(e);
   }
   const all = [ep, ...others.sort((a, b) => order.get(a.sourceId)! - order.get(b.sourceId)!)];
-  const candidates = finalizeCandidates(
+  const candidates = withBackupServers(finalizeCandidates(
     all
       .filter((e) => byId.has(e.sourceId))
       .map((e) => {
@@ -147,7 +169,7 @@ export async function playEpisodeRequest(s: Series, ep: Episode, startAt?: numbe
       }),
     new Set(all.map((e) => e.sourceId)).size > 1,
     (id) => byId.get(id)?.label || '',
-  );
+  ), byId);
   return {
     kind: 'episode', itemId: ep.id, seriesId: s.id, title: s.title,
     subtitle: `S${ep.season} E${ep.episode}${!isGenericEpisodeTitle(ep.title) ? ' · ' + ep.title : ''}`,
@@ -173,7 +195,7 @@ export async function catchupCandidates(channelId: string, start: number, stop: 
     const url = catchupUrl(v, src, secrets[src.id], start, Math.max(start + 60000, Math.min(stop, Date.now())));
     if (url) out.push({ url, label: qlabel(v.quality), quality: v.quality, sourceId: v.sourceId });
   }
-  return out;
+  return withBackupServers(finalizeCandidates(out, false, () => ''), byId);
 }
 
 export { watchKey };

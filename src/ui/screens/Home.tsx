@@ -3,7 +3,7 @@ import { useApp } from '@/state/store';
 import { t, fmtDuration } from '@/core/i18n';
 import { db } from '@/core/db';
 import {
-  continueWatching, dedup, dedupLang, favoritesOf, latestMovies, latestSeries, matchMovies, matchSeries, moviesSample, tmdbLists,
+  continueWatching, dedup, dedupLang, favoritesOf, hideFromContinue, latestMovies, latestSeries, matchMovies, matchSeries, moviesSample, tmdbLists,
 } from '@/core/repo';
 import type { Movie, Series, WatchState } from '@/core/types';
 import { useAsync } from '../hooks';
@@ -93,11 +93,11 @@ export function Home() {
   if (!data) return <div className="empty"><div className="spinner big" style={{ margin: '80px auto' }} /></div>;
 
   const open = (kind: 'movie' | 'series', id: string) => (kind === 'movie' ? openMovie(id) : openSeries(id));
-  const removeCont = (w: WatchState) => void db.watch.delete([w.profileId, w.key]).then(() => useApp.getState().bumpCatalog());
+  const removeCont = (w: WatchState) => void hideFromContinue(w).then(() => useApp.getState().bumpCatalog());
 
   return (
     <div>
-      {hero.length > 0 ? <Hero items={hero} /> : <div style={{ height: 24 }} />}
+      {hero.length > 0 ? <Hero items={hero} /> : <div className="hero-spacer" />}
 
       <Rail className="cat-rail">
         {TILES.map((tl) => (

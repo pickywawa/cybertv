@@ -1,4 +1,4 @@
-import { db, getMeta } from './db';
+import { db, getMeta, setMeta } from './db';
 import type { Channel, Episode, Favorite, Movie, Program, Series, Source, TmdbListItem, Universe, WatchState } from './types';
 import { listsKey, type TmdbLists } from './enrich/enrich';
 import { movieGroupKey, seriesGroupKey, QUALITY_RANK } from './util/text';
@@ -274,18 +274,72 @@ export async function episodesOf(seriesId: string): Promise<Episode[]> {
 
 export const watchKey = (kind: string, id: string) => `${kind}:${id}`;
 
+/**
+ * "Finished" even if the viewer quit during the end credits:
+ * remaining time ≤ max(5 %, min(10 min, 10 %)) → 9 min on a 90 min film, ~2 min on a 22 min episode.
+ */
+export function isFinished(positionSec: number, durationSec: number): boolean {
+  if (!durationSec) return false;
+  const remaining = durationSec - positionSec;
+  return remaining <= Math.max(0.05 * durationSec, Math.min(600, 0.1 * durationSec));
+}
+
+/**
+ * Movies and series in progress, most recent first:
+ * - finished movies are dropped,
+ * - one entry per series: the episode in progress, or the next episode when the last one was finished,
+ *   nothing when the series is over.
+ */
 export async function continueWatching(profileId: string): Promise<WatchState[]> {
-  const rows = await db.watch.where('[profileId+updatedAt]').between([profileId, -Infinity], [profileId, Infinity]).reverse().limit(60).toArray();
+  const rows = await db.watch.where('[profileId+updatedAt]').between([profileId, -Infinity], [profileId, Infinity]).reverse().limit(120).toArray();
+  const hidden = (await getMeta<Record<string, number>>(`contHidden:${profileId}`)) || {};
   const seenSeries = new Set<string>();
-  return rows.filter((w) => {
-    if (w.kind === 'live' || w.completed) return false;
-    if (w.positionSec < 30) return false;
-    if (w.seriesId) {
-      if (seenSeries.has(w.seriesId)) return false;
-      seenSeries.add(w.seriesId);
+  const out: WatchState[] = [];
+  for (const w of rows) {
+    if (w.kind === 'live') continue;
+    // removed by the user from the rail (until watched again)
+    const hk = w.seriesId || w.key;
+    if (hidden[hk] && hidden[hk] >= w.updatedAt) {
+      if (w.seriesId) seenSeries.add(w.seriesId);
+      continue;
     }
-    return true;
-  });
+    const done = w.completed || isFinished(w.positionSec, w.durationSec);
+    if (w.kind === 'movie') {
+      if (done || w.positionSec < 30) continue;
+      out.push(w);
+      continue;
+    }
+    if (w.kind !== 'episode' || !w.seriesId) continue;
+    if (seenSeries.has(w.seriesId)) continue; // only the latest episode watched decides
+    seenSeries.add(w.seriesId);
+    if (!done) {
+      if (w.positionSec >= 30) out.push(w);
+      continue;
+    }
+    const ep = await db.episodes.get(w.itemId);
+    if (!ep) continue;
+    const eps = (await db.episodes.where('seriesId').equals(w.seriesId).toArray()).sort((a, b) => a.season - b.season || a.episode - b.episode);
+    const next = eps[eps.findIndex((e) => e.id === ep.id) + 1];
+    if (!next) continue; // series finished
+    out.push({
+      ...w,
+      key: `episode:${next.id}`,
+      itemId: next.id,
+      subtitle: `S${next.season} E${next.episode}${next.title && !/^((É|E)pisode\s*\d+)$/i.test(next.title) ? ' · ' + next.title : ''}`,
+      image: next.still || w.image,
+      positionSec: 0,
+      durationSec: next.durationSec || 0,
+      completed: false,
+    });
+  }
+  return out;
+}
+
+export async function hideFromContinue(w: WatchState) {
+  const key = `contHidden:${w.profileId}`;
+  const cur = (await getMeta<Record<string, number>>(key)) || {};
+  cur[w.seriesId || w.key] = Date.now();
+  await setMeta(key, cur);
 }
 
 export async function history(profileId: string): Promise<WatchState[]> {
@@ -293,7 +347,7 @@ export async function history(profileId: string): Promise<WatchState[]> {
 }
 
 export async function saveProgress(w: Omit<WatchState, 'updatedAt' | 'completed'> & { completed?: boolean }) {
-  const completed = w.completed ?? (w.durationSec > 0 && w.positionSec / w.durationSec > 0.93);
+  const completed = w.completed ?? isFinished(w.positionSec, w.durationSec);
   await db.watch.put({ ...w, completed, updatedAt: Date.now() });
 }
 

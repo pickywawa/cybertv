@@ -21,10 +21,20 @@ export const Img = memo(function Img(p: Props) {
   return <ImgInner key={list.join('|')} {...p} list={list} />;
 });
 
-function ImgInner({ list, alt = '', label, className, contain, eager }: Props & { list: string[] }) {
-  const [i, setI] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const src = list[i];
+/**
+ * Session memory of image urls: already decoded ones render instantly (no lazy-load delay, no fade)
+ * when a tab is revisited; broken ones are skipped straight to the fallback instead of being retried.
+ */
+const LOADED = new Set<string>();
+const FAILED = new Set<string>();
+
+function ImgInner({ list: all, alt = '', label, className, contain, eager }: Props & { list: string[] }) {
+  const list = all.filter((u) => !FAILED.has(u));
+  // failed urls leave `list`, so the current candidate is always the first one
+  const [, rerender] = useState(0);
+  const [loaded, setLoaded] = useState(() => !!list[0] && LOADED.has(list[0]));
+  const src = list[0];
+  const known = !!src && LOADED.has(src);
   if (!src) {
     const l = label || alt || '?';
     // logo slots (contain) get a designed name tile instead of a generic placeholder
@@ -44,14 +54,18 @@ function ImgInner({ list, alt = '', label, className, contain, eager }: Props & 
       className={className}
       src={imgUrl(src)}
       alt={alt}
-      loading={eager ? 'eager' : 'lazy'}
+      loading={eager || known ? 'eager' : 'lazy'}
       decoding="async"
       draggable={false}
-      style={{ objectFit: contain ? 'contain' : undefined, opacity: loaded ? 1 : 0, transition: 'opacity .2s' }}
-      onLoad={() => setLoaded(true)}
+      style={{ objectFit: contain ? 'contain' : undefined, opacity: loaded || known ? 1 : 0, transition: known ? undefined : 'opacity .2s' }}
+      onLoad={() => {
+        LOADED.add(src);
+        setLoaded(true);
+      }}
       onError={() => {
+        FAILED.add(src);
         setLoaded(false);
-        setI((x) => x + 1);
+        rerender((x) => x + 1);
       }}
     />
   );

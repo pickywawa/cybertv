@@ -38,7 +38,7 @@ const api = {
     return syncSource(s, password, onProgress);
   },
 
-  testSource(src: Pick<Source, 'type' | 'url' | 'username'>, password?: string) {
+  testSource(src: Pick<Source, 'type' | 'url' | 'username' | 'servers'>, password?: string) {
     return testSource(src, password);
   },
 

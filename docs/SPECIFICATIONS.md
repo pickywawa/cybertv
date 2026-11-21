@@ -421,6 +421,11 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - Onglet TV (`src/core/channelRank.ts`) : classement national de référence (audiences annuelles, aucune API gratuite d'audience en temps réel) × langue × pays × programme en cours (sport en direct, grands événements, JT, film en prime). Filtre « Mes langues » activé par défaut.
 - Fiche : drapeaux audio / sous-titres, bande-annonce YouTube muette en fond après 3,5 s (désactivable dans Lecteur, coupée en mode performance).
 
+### Mise à jour automatique (V1.2)
+- `update.json` publié avec chaque release (`scripts/release.mjs`) : version web, `versionCode` de l'APK, `minVersionCode` requis.
+- Contenu web : ZIP vérifié (SHA-256), décompressé dans `files/web/<version>` et déclaré comme `serverBasePath` Capacitor (ignoré automatiquement après installation d'un nouvel APK). Retour au contenu de l'APK après 2 démarrages sans confirmation `updateBootOk`.
+- APK : téléchargé dans le cache puis remis à l'installeur Android (`REQUEST_INSTALL_PACKAGES` + FileProvider). Une installation 100 % silencieuse est impossible hors Play Store / appareil géré.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

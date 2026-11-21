@@ -7,11 +7,9 @@ import { useAsync } from '../hooks';
 import { Rail } from '../components/Rail';
 import { LandCard, PosterCard } from '../components/Cards';
 import { openMovie, openSeries, resume } from '../actions';
-import { IcSettings } from '../icons';
 
 export function MyVideos() {
   const profile = useApp((s) => s.profile)!;
-  const setTab = useApp((s) => s.setTab);
   const data = useAsync(async () => {
     const [cont, favs, hist] = await Promise.all([continueWatching(profile.id), favoritesOf(profile.id), history(profile.id)]);
     const movies = (await db.movies.bulkGet(favs.filter((f) => f.kind === 'movie').map((f) => f.itemId))).filter(Boolean) as Movie[];
@@ -22,11 +20,8 @@ export function MyVideos() {
   const empty = !data.cont.length && !data.movies.length && !data.series.length && !data.hist.length;
   return (
     <div className="tab-myvideos">
-      <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="container tab-h1">
         <h1 style={{ fontSize: '2rem', fontWeight: 700 }}>{t('nav.myvideos')}</h1>
-        <button className="btn" data-f onClick={() => setTab('settings')}>
-          <IcSettings /> {t('nav.settings')}
-        </button>
       </div>
       {empty && <div className="empty">{t('myvideos.empty')}</div>}
       {data.cont.length > 0 && (

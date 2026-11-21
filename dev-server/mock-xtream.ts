@@ -18,10 +18,10 @@ const STREAMS = {
   bipbop: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
   tears: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
   live1: 'https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8',
-  mp4bbb: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-  mp4ed: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-  mp4sintel: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-  mp4tos: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
+  mp4bbb: 'https://archive.org/download/BigBuckBunny_328/BigBuckBunny_512kb.mp4',
+  mp4ed: 'https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4',
+  mp4sintel: 'https://archive.org/download/Sintel/sintel-2048-surround_512kb.mp4',
+  mp4tos: 'https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4',
 };
 const LIVE_POOL = [STREAMS.live1, STREAMS.bbb, STREAMS.tears, STREAMS.bipbop];
 const VOD_POOL = [STREAMS.mp4bbb, STREAMS.mp4ed, STREAMS.mp4sintel, STREAMS.mp4tos, STREAMS.bbb, STREAMS.tears];

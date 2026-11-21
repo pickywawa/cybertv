@@ -5,9 +5,10 @@ import { isTvMode } from '@/core/platform';
 import { Logo } from '@/app/App';
 import { useMediaQuery } from './hooks';
 import { focusFirst } from './spatial';
-import { IcGrid, IcHome, IcMore, IcSearch, IcTv } from './icons';
+import { IcGrid, IcHome, IcLibrary, IcSearch, IcTv } from './icons';
 import { Home } from './screens/Home';
 import { PinPad } from './components/PinPad';
+import { UpdateBanner } from './components/UpdateBanner';
 import { LiveTv } from './screens/LiveTv';
 
 const Search = lazy(() => import('./screens/Search').then((m) => ({ default: m.Search })));
@@ -21,7 +22,7 @@ const TABS: { id: TabId; label: () => string; short?: () => string; icon: typeof
   { id: 'search', label: () => t('nav.search'), icon: IcSearch },
   { id: 'tv', label: () => t('nav.tv'), short: () => t('nav.tvShort'), icon: IcTv },
   { id: 'channels', label: () => t('nav.channels'), icon: IcGrid },
-  { id: 'myvideos', label: () => t('nav.myvideos'), icon: IcMore },
+  { id: 'myvideos', label: () => t('nav.myvideos'), icon: IcLibrary },
 ];
 
 export function Shell() {
@@ -69,6 +70,7 @@ export function Shell() {
     <div className="app-shell" aria-hidden={!!player} inert={player ? true : undefined}>
       {!mobile && <TopNav tab={tab} setTab={setTab} solid={solid || !!route || tab !== 'home'} />}
       <div className={`page ${mobile ? '' : ''}`} ref={pageRef} key={tab} inert={route ? true : undefined}>
+        {mobile && <MobileTop tab={tab} />}
         <Suspense fallback={<div className="empty"><div className="spinner big" style={{ margin: 'auto' }} /></div>}>
           {tab === 'home' && <Home />}
           {tab === 'search' && <Search />}
@@ -85,6 +87,7 @@ export function Shell() {
       )}
       {mobile && <BottomNav tab={tab} setTab={setTab} />}
       <PinGate />
+      <UpdateBanner />
       {sync.running && (
         <div className="sync-pill">
           <span className="spinner" />
@@ -115,10 +118,34 @@ function TopNav({ tab, setTab, solid }: { tab: TabId; setTab: (t: TabId) => void
       <button data-f className="icon-btn" onClick={() => setTab('search')} aria-label={t('nav.search')}>
         <IcSearch />
       </button>
-      <button data-f className="avatar" style={{ background: profile.color }} onClick={() => setTab('settings')} aria-label={t('nav.settings')}>
+      <button data-f className={`avatar ${tab === 'settings' ? 'on' : ''}`} style={{ background: profile.color }} onClick={() => setTab('settings')} aria-label={t('nav.settings')} title={t('nav.settings')}>
         {profile.emoji}
       </button>
     </header>
+  );
+}
+
+/** Mobile top bar: brand on Home (over the hero), tab title elsewhere, profile avatar (→ settings) top-right */
+function MobileTop({ tab }: { tab: TabId }) {
+  const setTab = useApp((s) => s.setTab);
+  const profile = useApp((s) => s.profile)!;
+  const title =
+    tab === 'search' ? t('nav.search') : tab === 'tv' ? t('nav.tv') : tab === 'channels' ? t('nav.channels') : tab === 'myvideos' ? t('nav.myvideos') : tab === 'settings' ? t('nav.settings') : '';
+  return (
+    <div className={`mtop ${tab === 'home' ? 'over' : ''}`}>
+      {tab === 'home' ? (
+        <span className="mtop-brand">
+          <Logo />
+        </span>
+      ) : (
+        <h1>{title}</h1>
+      )}
+      {tab !== 'settings' && (
+        <button className="mtop-btn avatar" style={{ background: profile.color }} onClick={() => setTab('settings')} aria-label={t('nav.settings')}>
+          {profile.emoji}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -127,11 +154,11 @@ function BottomNav({ tab, setTab }: { tab: TabId; setTab: (t: TabId) => void }) 
     <nav className="bottomnav">
       {TABS.map((x) => {
         const Ic = x.icon;
-        const active = tab === x.id || (x.id === 'myvideos' && tab === 'settings');
+        const active = tab === x.id;
         return (
           <button key={x.id} className={active ? 'active' : ''} onClick={() => setTab(x.id)}>
             <Ic />
-            {x.id === 'myvideos' ? t('nav.more') : (x.short || x.label)()}
+            {(x.short || x.label)()}
           </button>
         );
       })}

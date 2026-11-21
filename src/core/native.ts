@@ -48,6 +48,12 @@ export interface CyberNativePlugin {
   playerSetResize(o: { mode: 'fit' | 'fill' | 'zoom' }): Promise<void>;
   playerSetRate(o: { rate: number }): Promise<void>;
   playerPip(): Promise<void>;
+  updateInfo(): Promise<{ versionCode: number; versionName: string; webVersion?: string; canInstall: boolean }>;
+  updateBootOk(): Promise<void>;
+  updateWeb(o: { url: string; version: string; sha256?: string; apply?: boolean }): Promise<void>;
+  updateApplyWeb(): Promise<void>;
+  updateDownloadApk(o: { url: string }): Promise<void>;
+  updateInstallApk(): Promise<{ needsPermission: boolean }>;
   addListener(event: 'playerState', cb: (s: NativePlayerState) => void): Promise<PluginListenerHandle>;
   addListener(event: 'playerTracks', cb: (t: { tracks: NativeTrack[] }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'pipChanged', cb: (t: { active: boolean }) => void): Promise<PluginListenerHandle>;

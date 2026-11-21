@@ -11,6 +11,7 @@ import { setLang } from '@/core/i18n';
 import { applyTheme, useApp } from '@/state/store';
 import { installSpatialNav, setBackHandler, setSmoothScroll } from '@/ui/spatial';
 import type { Profile, SyncProgress } from '@/core/types';
+import { checkForUpdate, reportBootOk } from '@/core/updater';
 
 let periodic: number | null = null;
 let lastEnrichBump = 0;
@@ -30,8 +31,15 @@ export async function boot() {
     }
     CapApp.addListener('backButton', () => handleBack(true));
     CapApp.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) void maybeSync();
+      if (isActive) {
+        void maybeSync();
+        void runUpdateCheck();
+      }
     });
+    // this web bundle started: keep it; then look for a newer one in the background
+    reportBootOk();
+    setTimeout(() => void runUpdateCheck(), 8000);
+    setInterval(() => void runUpdateCheck(), 6 * 3600000);
   }
   document.documentElement.classList.toggle('tv', isTvMode());
   installSpatialNav();
@@ -159,4 +167,15 @@ export async function runSync(profileId: string, withEpg = true) {
     st.bumpCatalog();
     st.bumpEpg();
   }
+}
+
+let lastUpdateCheck = 0;
+export async function runUpdateCheck(force = false): Promise<void> {
+  if (!force && Date.now() - lastUpdateCheck < 30 * 60000) return;
+  lastUpdateCheck = Date.now();
+  const r = await checkForUpdate();
+  const cur = useApp.getState().update;
+  // a ready web bundle stays announced until restart even if a later check finds nothing new
+  if (r.kind === 'none' && cur.kind !== 'none') return;
+  useApp.setState({ update: r, updateDismissed: false });
 }

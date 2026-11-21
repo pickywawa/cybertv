@@ -6,7 +6,7 @@ import { dataWorker } from '@/core/workers';
 import { useApp } from '@/state/store';
 import { runSync, selectProfile } from '@/app/services';
 import { Logo } from '@/app/App';
-import { SourceForm, draftValid, emptyDraft, type SourceDraft } from '../components/SourceForm';
+import { SourceForm, draftInput, draftValid, emptyDraft, type SourceDraft } from '../components/SourceForm';
 import { focusFirst } from '../spatial';
 import { IcCheck, IcTrash } from '../icons';
 import { db } from '@/core/db';
@@ -47,7 +47,7 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
   };
 
   const useDemo = () =>
-    setDraft({ type: 'xtream', label: 'Démo', url: `${location.origin}/mock-xtream`, username: 'demo', password: 'demo', epg: '' });
+    setDraft({ type: 'xtream', label: 'Démo', url: `${location.origin}/mock-xtream`, username: 'demo', password: 'demo', epg: '', backups: [] });
 
   const testToken = async () => {
     setTokenState('busy');
@@ -57,10 +57,7 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
   const finish = async () => {
     const p = await createProfile({ name, emoji, color, lang });
     for (const d of allDrafts) {
-      await saveSource(p.id, {
-        type: d.type, label: d.label, url: d.url, username: d.username, password: d.password,
-        epgUrls: d.epg.split(/\s+/).map((s) => s.trim()).filter(Boolean),
-      });
+      await saveSource(p.id, draftInput(d));
     }
     if (token.trim()) await setTmdbToken(p.id, token.trim());
     const fresh = (await db.profiles.get(p.id))!;

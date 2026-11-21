@@ -12,6 +12,8 @@ import { Sheet } from '../components/Overlay';
 import { playChannel } from '../actions';
 import { focusEl } from '../spatial';
 import { IcPlay, IcRestart } from '../icons';
+import { langPrefs, profileCountry } from '@/core/prefs';
+import { matchesLangs, rankChannels } from '@/core/channelRank';
 
 const ROW_H = 64;
 const CH_W = 120;
@@ -34,7 +36,13 @@ export function Guide({ channelId }: { channelId?: string }) {
 
   const channels = useAsync(() => liveChannels(profile.id, { hideAdult: settings.hideAdult }), [profile.id]);
   const progs = useAsync(() => programsInRange(day0, dayEnd), [day0], { epg: true });
-  const rows = useMemo(() => (channels || []).filter((c) => c.epgId && progs?.has(c.epgId)), [channels, progs]);
+  // same order as the TV tab (national ranking × user languages), without the "on air" boost so rows don't move
+  const rows = useMemo(() => {
+    const prefs = langPrefs(profile);
+    const withEpg = (channels || []).filter((c) => c.epgId && progs?.has(c.epgId));
+    const mine = withEpg.filter((c) => matchesLangs(c, prefs));
+    return rankChannels(mine.length >= 5 ? mine : withEpg, { country: profileCountry(profile), prefs });
+  }, [channels, progs, profile]);
   const totalW = CH_W + ((dayEnd - day0) / 60000) * PX_PER_MIN;
   const x = (ts: number) => CH_W + ((ts - day0) / 60000) * PX_PER_MIN;
 
@@ -74,7 +82,14 @@ export function Guide({ channelId }: { channelId?: string }) {
         <h1 className="section-title">{t('tv.guide')}</h1>
         <div className="guide-days chips" data-row style={{ padding: 0 }}>
           {days.map((o) => (
-            <button key={o} data-f className={`chip ${dayOffset === o ? 'active' : ''}`} onClick={() => setDayOffset(o)}>
+            <button
+              key={o}
+              data-f
+              className={`chip ${dayOffset === o ? 'active' : ''}`}
+              onClick={() => setDayOffset(o)}
+              // start the day strip on the selected day (today) rather than on past days
+              ref={dayOffset === o ? (el) => el?.scrollIntoView({ inline: 'center', block: 'nearest' }) : undefined}
+            >
               {dayLabel(o)}
             </button>
           ))}

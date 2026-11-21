@@ -39,6 +39,9 @@ public class LocalProxy {
     private static final String TAG = "CyberProxy";
     private static final String UA = "VLC/3.0.20 LibVLC/3.0.20";
     private static final long IMG_CACHE_MAX = 400L * 1024 * 1024;
+    private static final int FIXED_PORT = 38517;
+    /** broken logos are remembered so they never hold one of the WebView's 6 connections again */
+    private static final long IMG_ERROR_TTL = 12L * 3600 * 1000;
 
     private final File imgDir;
     private final ExecutorService pool = Executors.newCachedThreadPool();
@@ -54,7 +57,14 @@ public class LocalProxy {
 
     public synchronized int start() throws IOException {
         if (server != null) return port;
-        server = new ServerSocket(0, 64, InetAddress.getByName("127.0.0.1"));
+        // stable port across launches so the WebView HTTP cache keeps hitting the same /img urls
+        for (int p = FIXED_PORT; p < FIXED_PORT + 4 && server == null; p++) {
+            try {
+                server = new ServerSocket(p, 64, InetAddress.getByName("127.0.0.1"));
+            } catch (IOException ignored) {
+            }
+        }
+        if (server == null) server = new ServerSocket(0, 64, InetAddress.getByName("127.0.0.1"));
         port = server.getLocalPort();
         Thread t = new Thread(() -> {
             while (!server.isClosed()) {
@@ -183,7 +193,7 @@ public class LocalProxy {
             String ct = ctf.exists() ? new String(readAll(new FileInputStream(ctf)), StandardCharsets.UTF_8) : "image/*";
             Map<String, String> h = new HashMap<>();
             h.put("Content-Type", ct);
-            h.put("Cache-Control", "public, max-age=604800");
+            h.put("Cache-Control", "public, max-age=31536000, immutable");
             writeHead(out, 200, "OK", h, f.length());
             try (FileInputStream fis = new FileInputStream(f)) {
                 byte[] buf = new byte[32 * 1024];
@@ -192,23 +202,37 @@ public class LocalProxy {
             }
             return;
         }
-        HttpURLConnection c = open(url, null, null);
-        int code = c.getResponseCode();
-        if (code >= 400) {
-            c.disconnect();
-            writeText(out, code, "Error", "upstream " + code);
+        File errf = new File(imgDir, key + ".err");
+        if (errf.exists() && System.currentTimeMillis() - errf.lastModified() < IMG_ERROR_TTL) {
+            writeText(out, 404, "Not Found", "cached error");
             return;
         }
+        HttpURLConnection c;
         byte[] data;
-        try (InputStream is = c.getInputStream()) {
-            data = readAll(is);
-        } finally {
-            c.disconnect();
+        try {
+            c = open(url, null, null);
+            int code = c.getResponseCode();
+            if (code >= 400) {
+                c.disconnect();
+                markError(errf);
+                writeText(out, code, "Error", "upstream " + code);
+                return;
+            }
+            try (InputStream is = c.getInputStream()) {
+                data = readAll(is);
+            } finally {
+                c.disconnect();
+            }
+            if (data.length == 0) throw new IOException("empty image");
+        } catch (IOException e) {
+            markError(errf);
+            writeText(out, 502, "Bad Gateway", "image unavailable");
+            return;
         }
         String ct = c.getContentType() != null ? c.getContentType() : "image/*";
         Map<String, String> h = new HashMap<>();
         h.put("Content-Type", ct);
-        h.put("Cache-Control", "public, max-age=604800");
+        h.put("Cache-Control", "public, max-age=31536000, immutable");
         writeHead(out, 200, "OK", h, data.length);
         out.write(data);
         out.flush();
@@ -228,8 +252,18 @@ public class LocalProxy {
         }
     }
 
+    private static void markError(File f) {
+        try {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+            //noinspection ResultOfMethodCallIgnored
+            f.createNewFile();
+        } catch (IOException ignored) {
+        }
+    }
+
     private void trimCache() {
-        File[] files = imgDir.listFiles((d, n) -> !n.endsWith(".ct") && !n.endsWith(".tmp"));
+        File[] files = imgDir.listFiles((d, n) -> !n.endsWith(".ct") && !n.endsWith(".tmp") && !n.endsWith(".err"));
         if (files == null) return;
         long total = 0;
         for (File f : files) total += f.length();

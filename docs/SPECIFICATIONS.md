@@ -553,6 +553,24 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - **Replay** : les logos des directs officiels sont enregistrés, un bandeau de même hauteur s'affiche pendant le chargement, et les images du bandeau sont en 1280×720.
 - **Télécommande** : un écran « lancement » s'affiche dès la validation d'une lecture ; dans le lecteur, Gauche/Droite restent dans la rangée de boutons (elles ne sautent plus sur la barre de temps).
 
+### Installer sur une TV depuis le téléphone (V1.12)
+- Paramètres › « Installer sur une TV » (Android téléphone et tablette uniquement), en 4 étapes :
+  1. **Préparer la TV** : explications pour activer le mode développeur et le débogage USB / réseau.
+  2. **Choisir la TV** : recherche sur le réseau Wi-Fi.
+     - Noms des TV via les annonces mDNS Google Cast (`_googlecast._tcp`, champ `fn`) et Android TV Remote.
+     - Débogage détecté par un balayage du /24 sur le port 5555 (48 connexions en parallèle, 450 ms chacune).
+     - Une TV vue sans débogage actif est indiquée ; saisie manuelle de l'IP possible.
+  3. **Installation** : téléchargement du dernier APK (`update.json` de la dernière release), connexion ADB, autorisation sur la TV si elle ne connaît pas encore le téléphone (aucun appairage), envoi à `cmd package install -r -S` avec progression, puis réponse du gestionnaire de paquets.
+  4. **Terminé**, avec le conseil de désactiver le débogage ensuite.
+- `AdbClient.java` : client ADB minimal sur TCP (CNXN, AUTH par signature RSA ou envoi de la clé publique, OPEN/WRTE/OKAY/CLSE avec contrôle de flux). Il est sans dépendance Android, donc testable sur une JVM.
+  - La clé RSA 2048 du téléphone est créée une fois et conservée.
+  - Vérifié : clé publique identique à celle d'`adb keygen`, signature au format attendu par `adbd`, installation d'un APK de 12 Mo en 1,5 s sur un émulateur.
+  - Parcours complet testé entre deux émulateurs : détection, téléchargement depuis GitHub, envoi et installation en 7 s.
+- Limites :
+  - les TV qui n'acceptent le débogage qu'avec un code d'appairage (« débogage sans fil » d'Android 11+, sans port 5555) ne sont pas encore prises en charge ;
+  - le téléphone doit avoir Android 8 ou plus ;
+  - pas encore testé sur une vraie TV.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

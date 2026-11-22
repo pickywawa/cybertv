@@ -357,6 +357,57 @@ public class CyberNativePlugin extends Plugin {
         call.resolve(r);
     }
 
+    // ───────────────────────── install on a TV ─────────────────────────
+
+    @PluginMethod
+    public void tvScan(PluginCall call) {
+        new Thread(() -> {
+            JSArray list = new JSArray();
+            for (TvInstaller.Tv t : TvInstaller.scan(getContext())) {
+                JSObject o = new JSObject();
+                o.put("ip", t.ip);
+                o.put("name", t.name);
+                o.put("adb", t.adb);
+                list.put(o);
+            }
+            JSObject r = new JSObject();
+            r.put("devices", list);
+            r.put("ownIp", TvInstaller.ownIp());
+            call.resolve(r);
+        }, "cyber-tv-scan").start();
+    }
+
+    @PluginMethod
+    public void tvInstall(PluginCall call) {
+        String ip = call.getString("ip");
+        String url = call.getString("url");
+        int port = call.getInt("port", 5555);
+        if (ip == null || url == null) {
+            call.reject("missing ip or url");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < 26) {
+            call.reject("unsupported");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                String model = TvInstaller.install(getContext(), ip, port, url, (step, pct, detail) -> {
+                    JSObject ev = new JSObject();
+                    ev.put("step", step);
+                    ev.put("pct", pct);
+                    if (detail != null) ev.put("model", detail);
+                    notifyListeners("tvInstall", ev);
+                });
+                JSObject r = new JSObject();
+                r.put("model", model);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }, "cyber-tv-install").start();
+    }
+
     /** the remote's voice / search key, sent by MainActivity */
     void onVoiceKey() {
         notifyListeners("voiceKey", new JSObject());

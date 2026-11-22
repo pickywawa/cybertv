@@ -768,3 +768,28 @@ a.btn { text-decoration: none; }
 @keyframes launch-in { from { opacity: 0; } }
 /* pressed state on cards and buttons (touch and remote OK) */
 .card:active, .btn:active, .card.land > button:active { transform: scale(0.97); transition: transform 0.06s; }
+
+/* Install on a TV */
+.tvi-steps { list-style: none; display: flex; gap: 6px; padding: 0; margin: 4px 0 22px; flex-wrap: wrap; }
+.tvi-steps li { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--surface); color: var(--text-3); font-size: 0.9rem; }
+.tvi-steps li span { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-weight: 700; font-size: 0.8rem; }
+.tvi-steps li.on { color: var(--text); background: var(--surface-2); }
+.tvi-steps li.on span { background: var(--accent, #2ee59d); color: #0b0b0d; }
+.tvi-steps li.past { color: var(--text-2); }
+.tvi-howto { background: var(--surface); border-radius: 12px; padding: 14px 16px; margin: 14px 0; line-height: 1.5; }
+.tvi-howto h3 { font-size: 1rem; margin: 6px 0 4px; }
+.tvi-howto p { margin: 0 0 10px; color: var(--text-2); }
+.tvi-scan { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--text-2); }
+.tvi-progress { list-style: none; padding: 0; margin: 14px 0; display: flex; flex-direction: column; gap: 12px; }
+.tvi-progress li { display: flex; align-items: center; gap: 12px; color: var(--text-3); }
+.tvi-progress li svg, .tvi-progress li .spinner, .tvi-progress li .dot { width: 22px; height: 22px; flex: none; }
+.tvi-progress li .dot { border-radius: 50%; border: 2px solid var(--surface-2); }
+.tvi-progress li.on { color: var(--text); font-weight: 600; }
+.tvi-progress li.ok { color: var(--text-2); }
+.tvi-progress li.ok svg { color: var(--accent, #2ee59d); }
+.tvi-progress li.ko { color: #ff6b6b; }
+.tvi-approve { background: rgba(255, 200, 60, 0.12); border: 1px solid rgba(255, 200, 60, 0.5); border-radius: 12px; padding: 14px 16px; line-height: 1.5; margin: 10px 0; }
+.tvi-success { text-align: center; padding: 18px 8px; }
+.tvi-success svg { width: 56px; height: 56px; color: var(--accent, #2ee59d); }
+.tvi-success h2 { margin: 10px 0 6px; }
+.tvi-success p { color: var(--text-2); }

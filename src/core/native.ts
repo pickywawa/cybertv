@@ -28,6 +28,17 @@ export interface NativeTrack {
   bitrate?: number;
 }
 
+export interface TvDevice {
+  ip: string;
+  name?: string;
+  adb: boolean;
+}
+export interface TvInstallEvent {
+  step: 'download' | 'connect' | 'approve' | 'upload' | 'install';
+  pct: number;
+  model?: string;
+}
+
 export interface CyberNativePlugin {
   getInfo(): Promise<NativeInfo>;
   secureGet(o: { key: string }): Promise<{ value: string | null }>;
@@ -65,6 +76,10 @@ export interface CyberNativePlugin {
   addListener(event: 'enrollReceived', cb: (t: { payload: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'pipChanged', cb: (t: { active: boolean }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'voiceKey', cb: () => void): Promise<PluginListenerHandle>;
+  addListener(event: 'tvInstall', cb: (e: TvInstallEvent) => void): Promise<PluginListenerHandle>;
+  /** install on a TV: TVs of the network (adb = network debugging reachable) */
+  tvScan(): Promise<{ devices: TvDevice[]; ownIp?: string }>;
+  tvInstall(o: { ip: string; port?: number; url: string }): Promise<{ model?: string }>;
 }
 
 export const CyberNative = registerPlugin<CyberNativePlugin>('CyberNative');

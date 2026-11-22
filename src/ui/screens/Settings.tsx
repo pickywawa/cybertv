@@ -18,11 +18,14 @@ import { setSmoothScroll } from '../spatial';
 import { isAndroidApp, isDesktop, isIOSApp, isTvMode } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { Toggle } from '../components/Overlay';
+import { TvInstall } from './TvInstall';
 import { PageHeader } from '../components/BackButton';
 import { PinPad } from '../components/PinPad';
 import { IcChevronRight, IcDown, IcRefresh, IcTrash, IcUp } from '../icons';
 
 const SECTIONS: SettingsSection[] = ['sources', 'services', 'appearance', 'player', 'parental', 'sync', 'categories', 'about'];
+/** Android phones / tablets only: install the app on a TV of the network */
+const sections = (): SettingsSection[] => (isAndroidApp && !isTvMode() ? [...SECTIONS.slice(0, 1), 'tvinstall', ...SECTIONS.slice(1)] : SECTIONS);
 
 export function Settings() {
   const profile = useApp((s) => s.profile)!;
@@ -43,7 +46,7 @@ export function Settings() {
           <span className="grow">{t('settings.profiles')}</span>
           <IcChevronRight className="chev" />
         </button>
-        {SECTIONS.map((s) => (
+        {sections().map((s) => (
           <button key={s} className="list-item" data-f onClick={() => push({ name: 'settings-section', section: s })}>
             <span className="grow">{t(`settings.${s}` as 'settings.sources')}</span>
             <IcChevronRight className="chev" />
@@ -73,6 +76,7 @@ export function SettingsSectionView({ section }: { section: SettingsSection }) {
         {section === 'sync' && <SyncSection />}
         {section === 'categories' && <CategoriesSection />}
         {section === 'about' && <AboutSection />}
+        {section === 'tvinstall' && <TvInstall />}
       </div>
     </div>
   );

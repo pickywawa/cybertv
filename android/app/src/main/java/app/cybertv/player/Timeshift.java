@@ -418,7 +418,7 @@ final class Timeshift {
                 } catch (IOException e) {
                     String m = String.valueOf(e.getMessage());
                     // up to ~15 s: one-connection subscriptions keep the previous stream "active" for a while after it stops
-                    if (attempt >= 10 || !(m.contains("407") || m.contains("509") || m.contains("429") || m.contains("PROXY_AUTH"))) throw e;
+                    if (attempt >= 3 || !(m.contains("407") || m.contains("509") || m.contains("429") || m.contains("PROXY_AUTH"))) throw e;
                     try {
                         Thread.sleep(1500);
                     } catch (InterruptedException ie) {
@@ -541,7 +541,7 @@ final class Timeshift {
                 Session s = start(u, max);
                 // first segment of every track (outside the lock: other requests keep flowing)
                 for (Track t : s.tracks.values()) {
-                    if (!t.awaitReady(15000)) {
+                    if (!t.awaitReady(8000)) {
                         synchronized (this) {
                             s.stop();
                             sessions.remove(s.id);

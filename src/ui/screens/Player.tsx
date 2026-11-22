@@ -24,6 +24,7 @@ import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
 import { Img } from '../components/Img';
 import { stopTimeshift } from '@/core/net/http';
 import { useTraktScrobble } from '../hooks/useTraktScrobble';
+import { rememberWorkingVariant } from '@/core/playback';
 import { Menu } from '../components/Overlay';
 import {
   IcAudio, IcBack10, IcClose, IcFwd10, IcHistory, IcInfo, IcPause, IcPip, IcPlay, IcRestart, IcSettings, IcSubtitles, IcTv,
@@ -38,6 +39,9 @@ const HIDE_MS = 4500;
 const LIVE_SLACK = 8;
 const isDvr = (mode: string, s: EngineState) => mode === 'live' && s.seekableEnd - s.seekableStart > 60;
 const STALL_MS = 14000;
+/** no first frame after this long: next version */
+const FIRST_FRAME_MS = 9000;
+const isLimitError = (e?: string) => !!e && /\b(407|509|429)\b|PROXY_AUTH|too many|max.?conn/i.test(e);
 
 export function Player({ req }: { req: PlayRequest }) {
   const profile = useApp((s) => s.profile)!;
@@ -52,6 +56,12 @@ export function Player({ req }: { req: PlayRequest }) {
   const [cands, setCands] = useState(req.candidates);
   const [candIdx, setCandIdx] = useState(0);
   const [fatal, setFatal] = useState(false);
+  /** what the loader is waiting for (another version, the provider freeing the connection…) */
+  const [loadNote, setLoadNote] = useState<string | null>(null);
+  /** reload of the same version (provider refused because the connection was still in use) */
+  const [attempt, setAttempt] = useState(0);
+  const limitTries = useRef(0);
+  const limitHit = useRef(false);
   const [uiVisible, setUiVisible] = useState(true);
   const [panel, setPanel] = useState<Panel>(null);
   const [tracks, setTracks] = useState<EngineTracks>({ audio: [], text: [], video: [] });
@@ -109,6 +119,9 @@ export function Player({ req }: { req: PlayRequest }) {
     setNextEp(null);
     pausedAt.current = null;
     if (!req.candidates.length) setFatal(true);
+    setLoadNote(null);
+    limitTries.current = 0;
+    limitHit.current = false;
   }, [req]);
 
   // load current candidate
@@ -122,7 +135,7 @@ export function Player({ req }: { req: PlayRequest }) {
     lastPos.current = -1;
     void eng.load(c.url, { startAt: candIdx === 0 ? req.startAt : undefined, live: mode === 'live' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cands, candIdx]);
+  }, [cands, candIdx, attempt]);
 
   // ───────── language-aware track selection + learning the real languages of a movie ─────────
   const autoTracksFor = useRef('');
@@ -176,32 +189,54 @@ export function Player({ req }: { req: PlayRequest }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [st.status === 'playing', candIdx, cands]);
 
+  // the next version, explained under the loader (no pop-up)
   const nextCandidate = useCallback(() => {
+    limitTries.current = 0;
     setCandIdx((i) => {
       if (i + 1 < cands.length) {
-        toast(t('player.fallback', { label: cands[i + 1].label }));
+        setLoadNote(t('player.trying', { label: cands[i + 1].label }));
         return i + 1;
       }
       setFatal(true);
       return i;
     });
-  }, [cands, toast]);
+  }, [cands]);
 
   // errors & stall watchdog → fallback chain
   useEffect(() => {
     if (st.status === 'error') {
+      // "connection already in use" (one-screen subscriptions answer 407 / 509 / 429): the same
+      // version is retried a few times — every other version would be refused the same way
+      if (isLimitError(st.error) && limitTries.current < 3) {
+        limitHit.current = true;
+        limitTries.current++;
+        setLoadNote(t('player.connBusy'));
+        const tm = window.setTimeout(() => setAttempt((a) => a + 1), 3000);
+        return () => clearTimeout(tm);
+      }
       nextCandidate();
       return;
     }
+    if (st.status === 'playing') setLoadNote(null);
     clearTimeout(stallTimer.current);
     if (st.status === 'loading' || st.status === 'buffering') {
       const pos = st.position;
+      // nothing at all yet: switch sooner than for a stall in the middle of playback
+      const wait = pos === 0 && st.status === 'loading' ? FIRST_FRAME_MS : STALL_MS;
       stallTimer.current = window.setTimeout(() => {
         if (stRef.current.position === pos && (stRef.current.status === 'loading' || stRef.current.status === 'buffering')) nextCandidate();
-      }, STALL_MS);
+      }, wait);
     }
     return () => clearTimeout(stallTimer.current);
-  }, [st.status, st.position, nextCandidate]);
+  }, [st.status, st.position, st.error, nextCandidate]);
+
+  // a live version plays: remembered for this channel (tried first next time)
+  useEffect(() => {
+    const c = cands[candIdx];
+    if (st.status !== 'playing' || mode !== 'live' || !channel || !c) return;
+    const tm = window.setTimeout(() => void rememberWorkingVariant(channel, c), 3000);
+    return () => clearTimeout(tm);
+  }, [st.status, mode, channel, cands, candIdx]);
 
   // ───────── live context: channel, EPG, zap list ─────────
   useEffect(() => {
@@ -674,6 +709,7 @@ export function Player({ req }: { req: PlayRequest }) {
       {loading && !fatal && (
         <div className="center-spin">
           <div className="spinner big" />
+          {loadNote && <div className="load-note">{loadNote}</div>}
         </div>
       )}
 
@@ -686,8 +722,8 @@ export function Player({ req }: { req: PlayRequest }) {
       {numBuf && <div className="zap-num">{numBuf}</div>}
 
       <div className={`ui ${(uiVisible || panel || fatal) && !pip ? '' : 'hidden'}`} onPointerUp={onSurfaceTap}>
-        <div className="top" onPointerUp={onSurfaceTap}>
-          {mode !== 'vod' && (channel?.logo || channel?.logoAlt) && <Img srcs={[channel!.logo, channel!.logoAlt]} contain className="ch-logo" alt="" />}
+        <div className="top" data-row data-row-lock onPointerUp={onSurfaceTap}>
+          {mode !== 'vod' && (channel?.logo || channel?.logoAlt) && <Img srcs={[channel!.logoAlt, channel!.logo]} contain className="ch-logo" alt="" />}
           <div className="ttl">
             <h2 className="ellipsis">{title}</h2>
             {subtitle && <div className="small ellipsis" style={{ opacity: 0.85, marginTop: 4 }}>{subtitle}</div>}
@@ -714,7 +750,7 @@ export function Player({ req }: { req: PlayRequest }) {
         </div>
 
         <div className="bottom" onPointerUp={onSurfaceTap}>
-          <div className="controls">
+          <div className="controls" data-row data-row-lock>
             <button className="pbtn" data-f onClick={() => seekBy(-10)} aria-label="-10s" disabled={mode === 'live' && !catchupOk && !(st.seekableEnd > st.seekableStart)}>
               <IcBack10 />
             </button>
@@ -777,7 +813,7 @@ export function Player({ req }: { req: PlayRequest }) {
 
       {banner && !uiVisible && channel && (
         <div className="zap-banner">
-          {(channel.logo || channel.logoAlt) && <Img srcs={[channel.logo, channel.logoAlt]} contain alt="" />}
+          {(channel.logo || channel.logoAlt) && <Img srcs={[channel.logoAlt, channel.logo]} contain alt="" />}
           <div>
             <div style={{ fontWeight: 800 }}>{channel.num ? `${channel.num} · ` : ''}{channel.name}</div>
             <div className="small">{prog.now ? `${fmtTime(prog.now.start)} ${prog.now.title}` : t('tv.noProgram')}</div>
@@ -790,9 +826,9 @@ export function Player({ req }: { req: PlayRequest }) {
         <div className="err">
           <div>
             <h2 style={{ marginBottom: 10 }}>{t('player.error')}</h2>
-            <p style={{ opacity: 0.8, maxWidth: 480 }}>{t('player.errorText')}</p>
+            <p style={{ opacity: 0.8, maxWidth: 480 }}>{limitHit.current ? t('player.connBusyFatal') : t('player.errorText')}</p>
             <div className="btn-row" style={{ justifyContent: 'center', marginTop: 20 }}>
-              <button className="btn primary" data-f data-autofocus onClick={() => { setFatal(false); setCandIdx(0); setCands([...cands]); }}>
+              <button className="btn primary" data-f data-autofocus onClick={() => { setFatal(false); limitTries.current = 0; limitHit.current = false; setLoadNote(null); setCandIdx(0); setCands([...cands]); }}>
                 {t('common.retry')}
               </button>
               <button className="btn" data-f onClick={close}>{t('common.close')}</button>
@@ -831,7 +867,7 @@ export function Player({ req }: { req: PlayRequest }) {
                   <button key={c.id} className={`zap-item ${c.groupKey === channel?.groupKey ? 'cur' : ''}`} data-f data-autofocus={c.groupKey === channel?.groupKey || undefined} onClick={() => void zapTo(c)}>
                     <span className="n">{c.num}</span>
                     <span className="zap-logo">
-                      <Img srcs={[c.logo, c.logoAlt]} contain label={c.name} alt="" />
+                      <Img srcs={[c.logoAlt, c.logo]} contain label={c.name} alt="" />
                     </span>
                     <span style={{ minWidth: 0 }}>
                       <div className="ellipsis" style={{ fontWeight: 600 }}>{c.name}</div>

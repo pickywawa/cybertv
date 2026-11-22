@@ -96,12 +96,15 @@ export function channelScore(c: Channel, ctx: RankCtx): number {
   const r = channelRank(c, ctx.country);
   if (r !== undefined) s += Math.max(10, 100 - r * 2.2);
   const langs = c.langs || [];
-  if (ctx.prefs.audio[0] && langs.includes(ctx.prefs.audio[0])) s += 50;
+  // the country's reference channels are in its language whatever version the provider tags
+  if (r !== undefined && ctx.prefs.audio[0] && (!langs.length || langs.includes(ctx.prefs.audio[0]))) s += 50;
+  else if (ctx.prefs.audio[0] && langs.includes(ctx.prefs.audio[0])) s += 50;
   else if (ctx.prefs.audio[1] && langs.includes(ctx.prefs.audio[1])) s += 35;
   else if (!langs.length) s += 10;
   else s -= 30;
   if (c.country && c.country === ctx.country) s += 25;
-  if (c.epgId && ctx.programs) s += programBoost(ctx.programs.get(c.epgId), ctx.at);
+  // what is on air only reorders beyond the main national channels (TF1, France 2… never move)
+  if (c.epgId && ctx.programs && (r === undefined || r >= 12)) s += programBoost(ctx.programs.get(c.epgId), ctx.at);
   else if (!c.epgId) s -= 5;
   return s;
 }

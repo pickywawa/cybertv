@@ -122,6 +122,8 @@ export async function selectProfile(p: Profile) {
   }
   await loadSecrets(p.id, true);
   void startEnrichment(p);
+  // saved channel lists first: the TV tab shows at once even while the catalogue is being read
+  void import('@/ui/screens/LiveTv').then((m) => m.preloadLiveSnaps(p.id)).catch(() => {});
   void searchWorker().warm(p.id, (await getMeta<number>(`catalog:version:${p.id}`)) || 0);
   // catalogs synced before language detection existed: resync once to tag languages/countries
   // v0.5: one full resync to restore catalogues an invalid list could have emptied
@@ -226,6 +228,7 @@ export async function schedulePrefetch(profileId: string, runNow = false) {
 export async function runSync(profileId: string, withEpg = true, opts: { quiet?: boolean } = {}) {
   const s = useApp.getState();
   if (s.sync.running) return;
+  const firstSync = !s.profile?.lastSyncAt;
   s.setSync({ running: true, quiet: !!opts.quiet, progress: { step: 'start' }, lastError: undefined });
   const secrets = await loadSecrets(profileId, true);
   let lastBump = 0;
@@ -253,7 +256,9 @@ export async function runSync(profileId: string, withEpg = true, opts: { quiet?:
     const prof = await db.profiles.get(profileId);
     if (prof && useApp.getState().profile?.id === profileId) {
       useApp.getState().patchProfile({ lastSyncAt: prof.lastSyncAt });
-      void startEnrichment(prof);
+      // right after a first sync the device is busy (search index, first screens): TMDB waits a bit
+      if (firstSync) window.setTimeout(() => void startEnrichment(prof), 60000);
+      else void startEnrichment(prof);
     }
     void searchWorker().warm(profileId, (await getMeta<number>(`catalog:version:${profileId}`)) || Date.now());
     // keep the background pre-download in step with the sources / servers in use

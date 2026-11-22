@@ -48,6 +48,8 @@ export interface GlobalSettings {
   recentSearches: string[];
   /** live timeshift kept on disk, in minutes (0 = off) */
   liveBuffer: number;
+  /** also for the IPTV source's channels (their HLS output starts much slower than their direct stream) */
+  liveBufferIptv: boolean;
 }
 
 const SETTINGS_KEY = 'cybertv.settings';
@@ -63,6 +65,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   hideAdult: true,
   recentSearches: [],
   liveBuffer: 30,
+  liveBufferIptv: false,
 };
 
 function loadSettings(): GlobalSettings {
@@ -94,6 +97,9 @@ interface AppState {
   tab: TabId;
   stack: Route[];
   player: PlayRequest | null;
+  /** a play was asked for and is being prepared (immediate feedback on OK / tap) */
+  launching: boolean;
+  setLaunching(v: boolean): void;
   sync: SyncState;
   /** bumped when the catalog/enrichment changes so views re-query */
   catalogVersion: number;
@@ -129,6 +135,8 @@ export const useApp = create<AppState>((set, get) => ({
   tab: 'home',
   stack: [],
   player: null,
+  launching: false,
+  setLaunching: (launching) => set({ launching }),
   sync: { running: false },
   catalogVersion: 0,
   epgVersion: 0,
@@ -172,7 +180,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
   resetStack: () => set({ stack: [] }),
   // closing the player refreshes views (continue watching, progress bars)
-  play: (player) => set(player ? { player } : { player: null, catalogVersion: get().catalogVersion + 1 }),
+  play: (player) => set(player ? { player, launching: false } : { player: null, launching: false, catalogVersion: get().catalogVersion + 1 }),
   setSync: (s) => set({ sync: { ...get().sync, ...s } }),
   bumpCatalog: () => set({ catalogVersion: get().catalogVersion + 1 }),
   bumpEpg: () => set({ epgVersion: get().epgVersion + 1 }),

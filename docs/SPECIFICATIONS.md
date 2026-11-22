@@ -539,6 +539,20 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - **Logos de chaînes** contenus dans leur cadre, quelle que soit leur forme.
 - **Téléphones** : mode portrait verrouillé en dehors de la lecture ; la barre d'état est masquée au-dessus du contenu des onglets.
 
+### Démarrage, mémoire des flux, TV (V1.11)
+- **Logos** : celui d'iptv-org passe avant celui du fournisseur, qui met parfois l'image d'une autre chaîne sur un flux (CANAL+ sur « TF1 FHD »).
+- **Lecture en direct** :
+  - la version d'une chaîne qui a fonctionné est mémorisée (`chanPick:<profil>:<groupe>`) et essayée en premier la fois suivante, même après un redémarrage ;
+  - passage à la version suivante au bout de 9 s sans première image (14 s pour un blocage en cours de lecture) ;
+  - les changements de version et les refus « connexion déjà utilisée » (407 / 509 / 429) s'affichent sous le chargement, sans fenêtre surgissante ; dans ce cas, la même version est réessayée 3 fois avant de passer à la suivante, et le message final indique que l'abonnement est sans doute utilisé ailleurs.
+- **Tampon du direct** : il ne s'applique plus par défaut qu'aux flux officiels. La sortie HLS des fournisseurs Xtream démarrait en 10 s ou plus, contre 1,5 à 3 s pour leur flux direct. Une option le réactive pour la source IPTV ; sans lui, la pause garde environ 50 s.
+- **Ordre des chaînes stable** : les chaînes de référence nationales reçoivent toujours le bonus de langue, et le programme en cours ne joue qu'au-delà des 12 premières.
+- **Liste instantanée** : chaque catégorie de « En direct » enregistre ses 60 premières chaînes avec le programme en cours ; ces listes sont relues au démarrage, avant les grosses lectures du catalogue. Mesuré sur le téléphone : 90 ms au lieu de 3,6 s.
+- **Programme TV** : la grille n'est plus remplacée par le chargement quand la liste se rafraîchit ; le défilement jusqu'à l'heure courante tient dès la première ouverture.
+- **Synchro** : les listes de films et de séries se téléchargent pendant le traitement des chaînes. Le préchargement en arrière-plan ne repart qu'après un intervalle complet (il retéléchargeait tout juste après la synchro). L'enrichissement TMDB attend 1 min après une première synchro.
+- **Replay** : les logos des directs officiels sont enregistrés, un bandeau de même hauteur s'affiche pendant le chargement, et les images du bandeau sont en 1280×720.
+- **Télécommande** : un écran « lancement » s'affiche dès la validation d'une lecture ; dans le lecteur, Gauche/Droite restent dans la rangée de boutons (elles ne sautent plus sur la barre de temps).
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

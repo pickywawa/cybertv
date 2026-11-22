@@ -405,6 +405,9 @@ function PlayerSection() {
           <span className="small dim">{t('settings.liveBufferHelp')}</span>
         </div>
       )}
+      {!isIOSApp && (settings.liveBuffer ?? 30) > 0 && (
+        <Toggle label={t('settings.liveBufferIptv')} sub={t('settings.liveBufferIptvHint')} on={!!settings.liveBufferIptv} onChange={(v) => update({ liveBufferIptv: v })} />
+      )}
       <div className="field">
         <label>{t('settings.tonightStart')}</label>
         <input className="input" data-f type="time" value={`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`} onChange={(e) => {

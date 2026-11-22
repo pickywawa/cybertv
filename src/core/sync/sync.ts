@@ -110,6 +110,14 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   const { auth: _a, ...account } = acc;
   src.account = account;
   const firstSync = !src.lastSyncAt;
+  // the six lists download together (the big film / series lists take minutes on a TV box);
+  // they are then processed one after the other so the screens fill in order
+  const dl = {
+    vcats: x.vodCategories().catch(() => []),
+    vstreams: x.vodStreams().catch(() => null),
+    scats: x.seriesCategories().catch(() => []),
+    slist: x.series().catch(() => null),
+  };
 
   // LIVE
   progress({ sourceId: src.id, step: 'live' });
@@ -153,7 +161,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   // VOD
   progress({ sourceId: src.id, step: 'vod' });
   // a failed or invalid answer skips movies for this sync (never "zero movies": that would wipe them)
-  const [vcats, vstreamsRaw] = await Promise.all([x.vodCategories().catch(() => []), x.vodStreams().catch(() => null)]);
+  const [vcats, vstreamsRaw] = await Promise.all([dl.vcats, dl.vstreams]);
   const vstreams = xtreamList(vstreamsRaw, 'stream_id');
   const vodOk = !!vstreams;
   const vcatRows: Category[] = asArray<any>(vcats).map((c, i) => ({
@@ -187,7 +195,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
 
   // SERIES
   progress({ sourceId: src.id, step: 'series' });
-  const [scats, slistRaw] = await Promise.all([x.seriesCategories().catch(() => []), x.series().catch(() => null)]);
+  const [scats, slistRaw] = await Promise.all([dl.scats, dl.slist]);
   const slist = xtreamList(slistRaw, 'series_id');
   const seriesOk = !!slist;
   const scatRows: Category[] = asArray<any>(scats).map((c, i) => ({

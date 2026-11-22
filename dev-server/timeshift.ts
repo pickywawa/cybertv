@@ -286,7 +286,7 @@ async function create(url: string, max: number): Promise<Session> {
       got = await fetchText(url);
     } catch (e) {
       // up to ~15 s: one-connection subscriptions keep the previous stream "active" for a while after it stops
-      if (attempt >= 10 || !/40[7]|509|429/.test(String((e as Error).message))) throw e;
+      if (attempt >= 3 || !/40[7]|509|429/.test(String((e as Error).message))) throw e;
       await new Promise((r) => setTimeout(r, 1500));
     }
   }
@@ -316,7 +316,7 @@ async function create(url: string, max: number): Promise<Session> {
   }
   // wait for the first segments of every track (or give up after 20 s)
   try {
-    await Promise.race([Promise.all([...s.tracks.values()].map((t) => t.ready)), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))]);
+    await Promise.race([Promise.all([...s.tracks.values()].map((t) => t.ready)), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))]);
   } catch (e) {
     s.stop();
     throw e;

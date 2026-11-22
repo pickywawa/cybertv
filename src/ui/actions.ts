@@ -33,9 +33,29 @@ export function openChannel(id: string) {
   useApp.getState().push({ name: 'channel', id });
 }
 
+/** shows the launching screen at once, until the player opens (or the request fails) */
+async function launching<T>(fn: () => Promise<T>): Promise<T> {
+  const st = useApp.getState();
+  st.setLaunching(true);
+  // safety: never stuck on it (age gate PIN, error…)
+  const tm = window.setTimeout(() => useApp.getState().setLaunching(false), 20000);
+  try {
+    return await fn();
+  } finally {
+    clearTimeout(tm);
+    if (!useApp.getState().player) useApp.getState().setLaunching(false);
+  }
+}
+
 export async function playChannel(ch: Channel, opts: { program?: Program; fromStart?: boolean; zapList?: string[] } = {}) {
+  if (!useApp.getState().player) return launching(() => playChannelNow(ch, opts));
+  return playChannelNow(ch, opts);
+}
+
+async function playChannelNow(ch: Channel, opts: { program?: Program; fromStart?: boolean; zapList?: string[] }) {
   const st = useApp.getState();
   if (ch.universe === 'adult' && st.profile?.parental.enabled && !st.unlockedAdult) {
+    useApp.getState().setLaunching(false);
     window.dispatchEvent(new CustomEvent('cyber:pin', { detail: () => void playChannel(ch, opts) }));
     return;
   }
@@ -44,19 +64,19 @@ export async function playChannel(ch: Channel, opts: { program?: Program; fromSt
 }
 
 export async function playMovie(id: string, startAt?: number) {
-  await ageGate('movie', id, async () => {
+  await ageGate('movie', id, () => launching(async () => {
     const m = await db.movies.get(id);
     if (!m) return;
     useApp.getState().play(await playMovieRequest(m, startAt));
-  });
+  }));
 }
 
 export async function playEpisode(seriesId: string, episodeId: string, startAt?: number) {
-  await ageGate('series', seriesId, async () => {
+  await ageGate('series', seriesId, () => launching(async () => {
     const [s, e] = await Promise.all([db.series.get(seriesId), db.episodes.get(episodeId)]);
     if (!s || !e) return;
     useApp.getState().play(await playEpisodeRequest(s, e, startAt));
-  });
+  }));
 }
 
 /** parental age limit for replay titles (their own rating) */
@@ -78,7 +98,7 @@ export async function playReplay(item: ReplayItem, startAt?: number) {
   if (item.provider === 'youtube') return openReplay(item);
   const st = useApp.getState();
   const lang = st.profile?.lang || 'fr';
-  replayAgeGate(item, async () => {
+  replayAgeGate(item, () => void launching(async () => {
     try {
       let pos = startAt;
       if (pos === undefined && st.profile) {
@@ -90,16 +110,18 @@ export async function playReplay(item: ReplayItem, startAt?: number) {
       const m = String((e as Error)?.message || '');
       st.toast(t(m === 'drm' ? 'replay.drm' : m === 'geo' || /HTTP 4/.test(m) ? 'replay.geo' : 'replay.unavailable'));
     }
-  });
+  }));
 }
 
 export async function playOfficial(o: OfficialLive) {
   const st = useApp.getState();
-  try {
-    st.play(await officialPlayRequest(o, st.profile?.lang || 'fr'));
-  } catch {
-    st.toast(t('replay.geo'));
-  }
+  await launching(async () => {
+    try {
+      st.play(await officialPlayRequest(o, st.profile?.lang || 'fr'));
+    } catch {
+      st.toast(t('replay.geo'));
+    }
+  });
 }
 
 export async function resume(w: WatchState) {

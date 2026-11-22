@@ -54,13 +54,19 @@ export function Guide({ channelId }: { channelId?: string }) {
   );
   // programmes: the first rows at once, the others in the background, chunk by chunk
   const [progs, setProgs] = useState<Map<string, Program[]> | null>(() => GUIDE_CACHE.get(`${day0}`) || null);
+  const shownDay = useRef(day0);
   useEffect(() => {
     if (!channels) return;
     let off = false;
     const ids = [...new Set(channels.map((c) => c.epgId).filter(Boolean) as string[])];
-    setProgs(GUIDE_CACHE.get(`${day0}`) || null);
+    // another day: its own data; same day (list or guide refreshed): keep showing what we have,
+    // never swap the grid back for the loader (the scroll to "now" would be lost)
+    if (shownDay.current !== day0) {
+      shownDay.current = day0;
+      setProgs(GUIDE_CACHE.get(`${day0}`) || null);
+    }
     void (async () => {
-      const acc = new Map<string, Program[]>();
+      const acc = new Map<string, Program[]>(GUIDE_CACHE.get(`${day0}`) || []);
       for (let i = 0; i < ids.length && !off; i += i === 0 ? 40 : 250) {
         const part = await programsForMany(ids.slice(i, i + (i === 0 ? 40 : 250)), day0, dayEnd);
         if (off) return;
@@ -93,9 +99,15 @@ export function Guide({ channelId }: { channelId?: string }) {
   // scroll to "now" (or the requested channel) once
   const did = useRef(false);
   useLayoutEffect(() => {
-    if (did.current || !rows.length || !bodyRef.current) return;
+    // only once the grid itself is on screen (not the loader), else the scroll is lost
+    if (did.current || !rows.length || !progs?.size || !bodyRef.current) return;
     did.current = true;
-    bodyRef.current.scrollLeft = Math.max(0, x(Date.now()) - CH_W - 120);
+    const target = Math.max(0, x(Date.now()) - CH_W - 120);
+    bodyRef.current.scrollLeft = target;
+    // the grid may get its full width a frame later
+    requestAnimationFrame(() => {
+      if (bodyRef.current && Math.abs(bodyRef.current.scrollLeft - target) > 2) bodyRef.current.scrollLeft = target;
+    });
     if (channelId) {
       const i = rows.findIndex((r) => r.id === channelId);
       if (i > 0) v.scrollToIndex(i, { align: 'center' });
@@ -105,7 +117,7 @@ export function Guide({ channelId }: { channelId?: string }) {
       focusEl(el, false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length]);
+  }, [rows.length, !!progs?.size]);
 
   useEffect(() => {
     if (dayOffset !== 0 && bodyRef.current) bodyRef.current.scrollLeft = x(day0 + 18 * 3600000) - CH_W - 60;
@@ -158,7 +170,7 @@ export function Guide({ channelId }: { channelId?: string }) {
               return (
                 <div key={ch.id} className="guide-row" data-row style={{ top: r.start, width: totalW }}>
                   <div className="guide-ch" title={ch.name} onClick={() => void playChannel(ch)}>
-                    <Img srcs={[ch.logo, ch.logoAlt]} contain label={ch.name} alt={ch.name} />
+                    <Img srcs={[ch.logoAlt, ch.logo]} contain label={ch.name} alt={ch.name} />
                   </div>
                   {!list.length && (
                     <div className="guide-empty" style={{ left: CH_W }}>

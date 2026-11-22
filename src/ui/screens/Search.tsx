@@ -198,13 +198,13 @@ export function Search() {
       )}
       {res && res.channels.length > 0 && (
         <Rail title={t('search.channels')}>
-          {res.channels.slice(0, 30).map((c) => <LogoTile key={c.id} name={c.name} logo={[c.logo, c.logoAlt]} onClick={() => void playChannel(c)} onLongPress={() => openChannel(c.id)} />)}
+          {res.channels.slice(0, 30).map((c) => <LogoTile key={c.id} name={c.name} logo={[c.logoAlt, c.logo]} onClick={() => void playChannel(c)} onLongPress={() => openChannel(c.id)} />)}
         </Rail>
       )}
       {res && res.programs.length > 0 && (
         <Rail title={t('search.programs')}>
           {res.programs.map(({ p, ch }) => (
-            <LandCard key={`${p.epgId}${p.start}`} title={p.title} sub={`${ch.name} · ${fmtTime(p.start)}`} image={p.icon} centerLogo={[ch.logo, ch.logoAlt]} onClick={() => setProg({ p, ch })} />
+            <LandCard key={`${p.epgId}${p.start}`} title={p.title} sub={`${ch.name} · ${fmtTime(p.start)}`} image={p.icon} centerLogo={[ch.logoAlt, ch.logo]} onClick={() => setProg({ p, ch })} />
           ))}
         </Rail>
       )}

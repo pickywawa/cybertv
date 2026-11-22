@@ -1,5 +1,5 @@
 import { cleanEpisodeTitle, isGenericEpisodeTitle } from '@/core/util/text';
-import { db } from './db';
+import { db, getMeta, setMeta } from './db';
 import type { Channel, Episode, Movie, PlayRequest, Program, Series, Source } from './types';
 import { catchupUrl, episodeUrl, liveUrl, movieUrl, type Engine } from './sources/urls';
 import { loadSecrets, sourcesOf, watchKey } from './repo';
@@ -105,8 +105,8 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
   for (const v of variants) {
     const src = byId.get(v.sourceId);
     if (!src) continue;
-    const url = catchup ? catchupUrl(v, src, secrets[src.id], catchup.start, Math.min(catchup.stop, Date.now())) : liveUrl(v, src, secrets[src.id], engineKind(), bufferSec() > 0);
-    if (url) candidates.push({ url, label: label(v), quality: v.quality, sourceId: v.sourceId });
+    const url = catchup ? catchupUrl(v, src, secrets[src.id], catchup.start, Math.min(catchup.stop, Date.now())) : liveUrl(v, src, secrets[src.id], engineKind(), bufferSec() > 0 && iptvBuffer());
+    if (url) candidates.push({ url, label: label(v), quality: v.quality, sourceId: v.sourceId, variantId: v.id });
   }
   const uniq = withBackupServers(finalizeCandidates(candidates, false, () => ''), byId);
   candidates.length = 0;
@@ -114,7 +114,14 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
   const official = !catchup ? await officialCandidate(ch) : null;
   if (official) candidates.push(official);
   candidates.push(...uniq);
-  if (!catchup) candidates.splice(0, candidates.length, ...candidates.map(withTimeshift));
+  // the version that worked last time for this channel goes first (no waiting on a dead one again)
+  const pick = await getMeta<string>(pickKey(ch));
+  if (pick) {
+    const first = candidates.filter((c) => (c.variantId || c.sourceId) === pick);
+    if (first.length) candidates.splice(0, candidates.length, ...first, ...candidates.filter((c) => !first.includes(c)));
+  }
+  // the buffer for official streams; for the provider's only if asked (its HLS output starts ~10 s slower)
+  if (!catchup) candidates.splice(0, candidates.length, ...candidates.map((c) => (c.sourceId === 'official' || iptvBuffer() ? withTimeshift(c) : c)));
   return {
     kind: 'live',
     itemId: ch.id,
@@ -129,11 +136,21 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
   };
 }
 
+const pickKey = (ch: Pick<Channel, 'profileId' | 'groupKey'>) => `chanPick:${ch.profileId}:${ch.groupKey}`;
+
+/** a channel version played: it is tried first next time (after a restart too) */
+export async function rememberWorkingVariant(ch: Pick<Channel, 'profileId' | 'groupKey'>, cand: { variantId?: string; sourceId: string }) {
+  const id = cand.variantId || cand.sourceId;
+  if ((await getMeta<string>(pickKey(ch))) !== id) await setMeta(pickKey(ch), id);
+}
+
 /** live buffer length chosen in the settings (seconds); none on iOS (no local recorder) */
 export function bufferSec(): number {
   if (isIOSApp) return 0;
   return (useApp.getState().settings.liveBuffer ?? 30) * 60;
 }
+
+const iptvBuffer = () => !!useApp.getState().settings.liveBufferIptv;
 
 /** live HLS goes through the local recorder: pause and rewind without provider catch-up */
 export function withTimeshift<C extends { url: string }>(c: C): C {

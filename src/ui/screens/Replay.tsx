@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/state/store';
 import { t, fmtDate, fmtDuration } from '@/core/i18n';
-import { db } from '@/core/db';
+import { db, getMeta, setMeta } from '@/core/db';
 import { continueWatching, getProgress } from '@/core/repo';
 import type { Channel, WatchState } from '@/core/types';
 import { OFFICIAL_LIVE, officialFor, replayCatalog, replayInfo, replayShow, type OfficialLive, type ReplayCatalog, type ReplayItem, type ReplayProvider, type ReplayShow } from '@/core/replay';
@@ -15,6 +15,7 @@ import { openReplay, playChannel, playOfficial, playReplay, resume } from '../ac
 import { IcInfo, IcPlay, IcRefresh, IcRestart } from '../icons';
 
 const MEM = new Map<string, ReplayCatalog>();
+const LIVE_SNAP = new Map<string, Map<string, Channel>>();
 const PROVIDER_LABEL: Record<ReplayProvider, string> = { arte: 'ARTE', francetv: 'france.tv', youtube: 'YouTube' };
 type Filter = 'all' | ReplayProvider | 'kids';
 
@@ -95,7 +96,14 @@ export function Replay() {
 
   return (
     <div className="tab-replay">
-      {hero.length > 0 ? <ReplayHero items={hero} /> : <div className="hero-spacer" />}
+      {hero.length > 0 ? (
+        <ReplayHero items={hero} />
+      ) : cat === undefined && filter !== 'youtube' ? (
+        // same height as the banner while the catalogue loads: nothing jumps when it arrives
+        <section className="hero hero-skeleton" aria-hidden />
+      ) : (
+        <div className="hero-spacer" />
+      )}
       <div className="chips" data-row>
         {(['all', 'arte', 'francetv', 'youtube', 'kids'] as Filter[]).map((f) => (
           <button key={f} data-f className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
@@ -138,7 +146,19 @@ export function Replay() {
 /** official free live streams; the user's own channel (with its guide) when a source carries it */
 function LiveRail() {
   const profile = useApp((s) => s.profile)!;
-  const matches = useAsync(async () => {
+  // the user's own versions of these channels (logos, guide); saved so their logos show at once
+  const snapKey = `snapshot:replaylive:${profile.id}`;
+  const [saved, setSaved] = useState<Map<string, Channel> | undefined>(() => LIVE_SNAP.get(snapKey));
+  useEffect(() => {
+    if (LIVE_SNAP.has(snapKey)) return;
+    void getMeta<[string, Channel][]>(snapKey).then((rows) => {
+      if (!rows) return;
+      const m = new Map(rows);
+      LIVE_SNAP.set(snapKey, m);
+      setSaved((x) => x || m);
+    });
+  }, [snapKey]);
+  const fresh = useAsync(async () => {
     const keys = OFFICIAL_LIVE.flatMap((o) => o.keys);
     const rows = (await db.channels.where('groupKey').anyOf(keys).toArray()).filter((c) => c.profileId === profile.id);
     const out = new Map<string, Channel>();
@@ -146,8 +166,11 @@ function LiveRail() {
       const o = officialFor(c);
       if (o && !out.has(o.key)) out.set(o.key, c);
     }
+    LIVE_SNAP.set(snapKey, out);
+    void setMeta(snapKey, [...out.entries()]).catch(() => {});
     return out;
   }, [profile.id], { key: `replay:live:${profile.id}` });
+  const matches = fresh || saved;
   const play = (o: OfficialLive) => {
     const ch = matches?.get(o.key);
     void (ch ? playChannel(ch) : playOfficial(o));
@@ -156,7 +179,7 @@ function LiveRail() {
     <Rail title={t('replay.live')}>
       {OFFICIAL_LIVE.map((o) => {
         const ch = matches?.get(o.key);
-        return <LogoTile key={o.key} name={o.name} logo={ch ? [ch.logo, ch.logoAlt] : undefined} onClick={() => play(o)} />;
+        return <LogoTile key={o.key} name={o.name} logo={ch ? [ch.logoAlt, ch.logo] : undefined} onClick={() => play(o)} />;
       })}
     </Rail>
   );
@@ -174,7 +197,7 @@ function ReplayHero({ items }: { items: ReplayItem[] }) {
   return (
     <section className="hero" onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
       <div className="bg">
-        <Img srcs={[it.image?.replace('940x530', '1920x1080')]} eager label={it.title} />
+        <Img srcs={[it.image?.replace('940x530', '1280x720')]} eager label={it.title} />
       </div>
       <div className="content">
         <span className={`rp-prov ${it.provider}`}>{it.channel || PROVIDER_LABEL[it.provider]}</span>
@@ -234,7 +257,7 @@ export function ReplayPage({ id, item }: { id: string; item?: ReplayItem }) {
       <BackButton />
       <section className="detail-hero" style={{ minHeight: 'min(62vh, 44vw)' }}>
         <div className="bg">
-          <Img srcs={[it?.image?.replace('940x530', '1920x1080'), it?.image]} label={it?.title || ''} eager />
+          <Img srcs={[it?.image?.replace('940x530', '1280x720'), it?.image]} label={it?.title || ''} eager />
         </div>
         <div className="content">
           {it && <span className={`rp-prov ${it.provider}`}>{it.channel || PROVIDER_LABEL[it.provider]}</span>}

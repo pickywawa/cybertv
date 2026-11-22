@@ -287,7 +287,8 @@ export interface PlayRequest {
   logo?: string;
   /** ordered candidate urls (fallback chain) */
   /** `server`: Xtream server the url points to (a backup one is remembered once it plays) */
-  candidates: { url: string; label: string; quality: Quality; sourceId: string; server?: string }[];
+  /** `variantId`: the channel version (live), to remember the one that works */
+  candidates: { url: string; label: string; quality: Quality; sourceId: string; server?: string; variantId?: string }[];
   startAt?: number;
   live?: boolean;
   /** catch-up playback of a past/current program */

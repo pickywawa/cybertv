@@ -11,6 +11,7 @@ export function App() {
   const screen = useApp((s) => s.screen);
   const player = useApp((s) => s.player);
   const toasts = useApp((s) => s.toasts);
+  const launching = useApp((s) => s.launching);
   return (
     <>
       {screen === 'boot' && (
@@ -26,6 +27,11 @@ export function App() {
         <Suspense fallback={null}>
           <Player req={player} />
         </Suspense>
+      )}
+      {launching && !player && (
+        <div className="launching" role="status" aria-label="…">
+          <div className="spinner big" />
+        </div>
       )}
       <VoiceControl />
       <div className="toasts">

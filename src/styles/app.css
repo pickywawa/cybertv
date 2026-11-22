@@ -469,7 +469,7 @@ textarea.input { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .seekbar:focus { box-shadow: none; }
 .seekbar:focus .track { box-shadow: 0 0 0 2px #fff; }
 .times { display: flex; justify-content: space-between; font-size: 0.85rem; color: rgba(255, 255, 255, 0.85); }
-.player .center-spin { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.player .center-spin { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
 .player .center-spin .spinner { border-color: rgba(255, 255, 255, 0.25); border-top-color: #fff; }
 .player .err { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; background: rgba(0, 0, 0, 0.75); }
 .player .panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 92vw); background: rgba(14, 14, 18, 0.96); padding: 24px 18px; overflow-y: auto; z-index: 3; }
@@ -757,3 +757,14 @@ a.btn { text-decoration: none; }
 .yt-bar { display: flex; align-items: center; gap: 12px; padding: 8px max(12px, var(--sal, 0px)) calc(8px + var(--sab)) 12px; background: #0b0b0d; color: #fff; }
 .yt-title { flex: 1; font-weight: 600; }
 .yt-close { color: #fff; }
+
+.load-note { margin-top: 18px; max-width: min(520px, 86vw); text-align: center; color: #fff; opacity: 0.85; font-size: 0.95rem; line-height: 1.4; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+
+.hero-skeleton { background: linear-gradient(110deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%); background-size: 200% 100%; animation: skel 1.4s linear infinite; }
+@keyframes skel { to { background-position: -200% 0; } }
+
+/* a play was asked for: immediate feedback until the player opens */
+.launching { position: fixed; inset: 0; z-index: 950; display: grid; place-items: center; background: rgba(0, 0, 0, 0.72); animation: launch-in 0.12s ease-out; }
+@keyframes launch-in { from { opacity: 0; } }
+/* pressed state on cards and buttons (touch and remote OK) */
+.card:active, .btn:active, .card.land > button:active { transform: scale(0.97); transition: transform 0.06s; }

@@ -83,8 +83,11 @@ public class PrefetchWorker extends Worker {
                 .setRequiresStorageNotLow(true)
                 .build();
         long hours = Math.max(1, intervalH);
+        // first pass after a full interval: the app has just synced, downloading everything again
+        // right away only slowed the device down (TV boxes especially)
         PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(PrefetchWorker.class, hours, TimeUnit.HOURS, 1, TimeUnit.HOURS)
                 .setConstraints(cons)
+                .setInitialDelay(hours, TimeUnit.HOURS)
                 .build();
         WorkManager.getInstance(c).enqueueUniquePeriodicWork(UNIQUE, ExistingPeriodicWorkPolicy.UPDATE, req);
     }

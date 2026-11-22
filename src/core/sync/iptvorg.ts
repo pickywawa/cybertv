@@ -108,6 +108,8 @@ export async function applyIptvOrg(profileId: string): Promise<number> {
     }
     if (!e) continue;
     const p: Partial<Channel> = { iptvId: e.id };
+    // iptv-org's curated logo is shown first (logoAlt); the provider's stays as fallback — providers
+    // sometimes put another channel's picture on a stream (CANAL+ on "TF1 FHD")
     if (e.logo) {
       if (!ch.logo) p.logo = e.logo;
       else if (ch.logo !== e.logo) p.logoAlt = e.logo;

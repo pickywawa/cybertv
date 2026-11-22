@@ -1,4 +1,4 @@
-import { isGenericEpisodeTitle } from '@/core/util/text';
+import { cleanEpisodeTitle, isGenericEpisodeTitle } from '@/core/util/text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/state/store';
@@ -394,6 +394,15 @@ function SeriesDetail({ s }: { s: Series }) {
     return { ep: episodes[0], at: 0 };
   }, [episodes, last]);
 
+  // the episode to watch next is brought into view in the horizontal list
+  const epListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const id = resumeTarget?.ep.id;
+    const box = epListRef.current;
+    const el = id ? box?.querySelector<HTMLElement>(`[data-ep="${id}"]`) : null;
+    if (box && el) box.scrollLeft = Math.max(0, el.offsetLeft - box.offsetLeft - 16);
+  }, [resumeTarget?.ep.id, curSeason, list.length]);
+
   return (
     <div style={{ paddingBottom: 40 }}>
       <BackButton />
@@ -439,11 +448,11 @@ function SeriesDetail({ s }: { s: Series }) {
           ) : !list.length ? (
             <div className="empty">{t('detail.noEpisodes')}</div>
           ) : (
-            <div className="ep-list">
+            <div className="ep-list" data-row ref={epListRef}>
               {list.map((e) => {
                 const w = wmap.get(e.id);
                 return (
-                  <button key={e.id} className="ep" data-f onClick={() => void playEpisode(s.id, e.id, w && !w.completed ? w.positionSec : 0)}>
+                  <button key={e.id} className="ep" data-f data-ep={e.id} onClick={() => void playEpisode(s.id, e.id, w && !w.completed ? w.positionSec : 0)}>
                     <div className="thumb">
                       <Img srcs={[e.still, s.backdrop]} label={`${s.title} ${e.episode}`} />
                       <span className="play-ov"><IcPlay color="#fff" /></span>
@@ -456,10 +465,10 @@ function SeriesDetail({ s }: { s: Series }) {
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>
                         {t('detail.episode', { n: e.episode })}
-                        {!isGenericEpisodeTitle(e.title) ? ` · ${e.title}` : ''}
+                        {!isGenericEpisodeTitle(e.title) ? ` · ${cleanEpisodeTitle(e.title)}` : ''}
                       </div>
                       {e.durationSec ? <div className="small muted" style={{ margin: '4px 0 8px' }}>{t('common.min', { n: Math.round(e.durationSec / 60) })}</div> : null}
-                      {e.plot && <p className="clamp3 muted" style={{ margin: 0, lineHeight: 1.45 }}>{e.plot}</p>}
+                      {e.plot && <p className="clamp2 muted small" style={{ margin: 0, lineHeight: 1.45 }}>{e.plot}</p>}
                     </div>
                   </button>
                 );

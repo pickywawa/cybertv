@@ -131,6 +131,16 @@ export async function selectProfile(p: Profile) {
     if (!p.lastSyncAt) void setMeta(LANG_SCHEMA, true);
     void maybeSync();
   }
+  // v0.10: channel versions without a guide id take their sibling's (once, then after every guide sync)
+  const EPG_FILL = `schema:epgfill:v2:${p.id}`;
+  if (p.lastSyncAt && !(await getMeta<boolean>(EPG_FILL))) {
+    void dataWorker()
+      .fillEpgIds(p.id)
+      .then(async (n) => {
+        await setMeta(EPG_FILL, true);
+        if (n) useApp.getState().bumpCatalog();
+      });
+  }
   void schedulePrefetch(p.id);
   if (periodic) clearInterval(periodic);
   periodic = window.setInterval(() => void maybeSync(), 20 * 60000);
@@ -197,6 +207,7 @@ export async function runSync(profileId: string, withEpg = true, opts: { quiet?:
   s.setSync({ running: true, quiet: !!opts.quiet, progress: { step: 'start' }, lastError: undefined });
   const secrets = await loadSecrets(profileId, true);
   let lastBump = 0;
+  let lastEpgBump = 0;
   try {
     await dataWorker().syncProfile(
       profileId,
@@ -209,8 +220,9 @@ export async function runSync(profileId: string, withEpg = true, opts: { quiet?:
           lastBump = Date.now();
           st.bumpCatalog();
         }
-        if (p.step === 'epg' && p.count && Date.now() - lastBump > 3000) {
-          lastBump = Date.now();
+        // the guide is big: screens refresh it every 20 s at most while it is being written
+        if (p.step === 'epg' && p.count && Date.now() - lastEpgBump > 20000) {
+          lastEpgBump = Date.now();
           st.bumpEpg();
         }
       }),

@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import { setProxyBase } from '@/core/net/http';
-import { syncProfile, syncEpg, syncSource, testSource, loadXtreamEpisodes, prefetchPlan } from '@/core/sync/sync';
+import { syncProfile, syncEpg, syncSource, testSource, loadXtreamEpisodes, prefetchPlan, fillMissingEpgIds } from '@/core/sync/sync';
 import { takePrefetchHits } from '@/core/net/http';
 import { Tmdb } from '@/core/enrich/tmdb';
 import { Enricher, enrichSeason, refreshLists } from '@/core/enrich/enrich';
@@ -30,6 +30,9 @@ const api = {
     }
   },
 
+  async fillEpgIds(profileId: string) {
+    return fillMissingEpgIds(profileId);
+  },
   async syncEpg(profileId: string, secrets: Secrets, onProgress: (p: SyncProgress) => void) {
     await syncEpg(profileId, secrets, onProgress);
   },

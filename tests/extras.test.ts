@@ -55,3 +55,35 @@ describe('catalogue protection', () => {
     expect(pruneLooksSafe(50, 10)).toBe(true);
   });
 });
+
+import { resizeTmdb } from '../src/core/enrich/tmdb';
+import { cleanName } from '../src/core/util/text';
+import { genreKeys } from '../src/core/util/genres';
+
+describe('device fixes', () => {
+  it('resizes every TMDB url form', () => {
+    expect(resizeTmdb('https://image.tmdb.org/t/p/w600_and_h900_bestv2/abc.jpg', 'w342')).toBe('https://image.tmdb.org/t/p/w342/abc.jpg');
+    expect(resizeTmdb('https://image.tmdb.org/t/p/original/abc.jpg', 'w780')).toBe('https://image.tmdb.org/t/p/w780/abc.jpg');
+    expect(resizeTmdb('http://1.2.3.4/p.jpg', 'w342')).toBe('http://1.2.3.4/p.jpg');
+  });
+  it('cleans trailing slashes of channel names', () => {
+    expect(cleanName('TF1 //')).toBe('TF1');
+    expect(cleanName('FRANCE 2 /')).toBe('FRANCE 2');
+  });
+  it('finds genres from TMDB or the provider category', () => {
+    expect(genreKeys({ genres: ['Drame', 'Comédie'] })).toEqual(['comedy', 'drama']);
+    expect(genreKeys({}, 'COMEDIE [FR]')).toEqual(['comedy']);
+    expect(genreKeys({}, 'CRIME-THRILLER [FR]')).toEqual(['thriller']);
+    expect(genreKeys({}, 'NETFLIX [NL]')).toEqual([]);
+  });
+});
+
+import { cleanEpisodeTitle, isGenericEpisodeTitle } from '../src/core/util/text';
+describe('episode titles', () => {
+  it('drops the show name and number', () => {
+    expect(cleanEpisodeTitle("Where's Wanda? (2024) - S01E01 - Les Klatt")).toBe('Les Klatt');
+    expect(cleanEpisodeTitle('Lupin S02 E05')).toBe('Lupin S02 E05');
+    expect(cleanEpisodeTitle('Le pilote')).toBe('Le pilote');
+    expect(isGenericEpisodeTitle('Show (2020) - S01E02')).toBe(true);
+  });
+});

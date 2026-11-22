@@ -1,4 +1,4 @@
-import { isGenericEpisodeTitle } from '@/core/util/text';
+import { cleanEpisodeTitle, isGenericEpisodeTitle } from '@/core/util/text';
 import { db } from './db';
 import type { Channel, Episode, Movie, PlayRequest, Program, Series, Source } from './types';
 import { catchupUrl, episodeUrl, liveUrl, movieUrl, type Engine } from './sources/urls';
@@ -202,7 +202,7 @@ export async function playEpisodeRequest(s: Series, ep: Episode, startAt?: numbe
   ), byId);
   return {
     kind: 'episode', itemId: ep.id, seriesId: s.id, title: s.title,
-    subtitle: `S${ep.season} E${ep.episode}${!isGenericEpisodeTitle(ep.title) ? ' · ' + ep.title : ''}`,
+    subtitle: `S${ep.season} E${ep.episode}${!isGenericEpisodeTitle(ep.title) ? ' · ' + cleanEpisodeTitle(ep.title) : ''}`,
     image: ep.still || s.backdrop || s.poster, logo: s.logo, candidates, startAt, durationSec: ep.durationSec,
   };
 }

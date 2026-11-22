@@ -509,6 +509,24 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
   - les nombres en toutes lettres sont convertis ; « canal plus » privilégie les noms écrits avec un « + ».
 - Exécution (`src/ui/voice/run.ts`) : correspondance par l'index de recherche (chaînes, films, séries). Un film reprend là où il s'était arrêté, une série ouvre sa fiche. Si rien ne correspond, l'écran de recherche s'ouvre. Une bulle affiche ce qui a été compris et l'action faite.
 
+### Correctifs constatés sur téléphone avec un vrai abonnement Xtream (V1.9)
+- **Affiches** : 85 % des affiches du fournisseur sont des URL TMDB `w600_and_h900_bestv2`. Le redimensionnement remplaçait seulement « w600 » et produisait une adresse invalide. Le segment de taille est désormais remplacé en entier.
+- **Ordre des chaînes** : le bonus « programme en cours » (+70 pour un match en direct) faisait passer L'Équipe 21 ou RMC devant TF1. Il est réduit (+6 au plus) et ne départage que des chaînes d'audience proche.
+- **Noms de chaînes** : les « / » et « // » du fournisseur sont retirés, aussi dans les noms déjà enregistrés (réparation unique).
+- **Programmes manquants** : le fournisseur ne donne un identifiant de guide qu'à certaines versions d'une chaîne (pas à « TF1 UHD/4K »). Les autres versions le prennent d'une version sœur ou de leur identifiant iptv-org, après chaque synchro du guide et une fois au lancement.
+- **Programme TV** :
+  - il ouvrait rarement : pendant la synchro du guide, l'écran relançait toutes les 3 s une requête de plus de 3 s sur téléphone, dont le résultat était chaque fois jeté ;
+  - les écrans n'ont plus qu'une requête à la fois, avec au plus une relance ensuite, et un résultat plus lent n'est plus perdu ; le guide n'est rafraîchi que toutes les 20 s pendant la synchro ;
+  - le guide reprend la liste et l'ordre de la catégorie sélectionnée dans « En direct » (chaînes sans programme comprises) et charge les programmes chaîne par chaîne, par l'index `[epgId+start]` : 40 d'abord, puis par paquets ;
+  - mesures sur le téléphone : 0,4 à 0,5 s, contre plusieurs secondes ou jamais avant.
+- **Sous-catégories** : puces de genre dans Cinéma et Séries (Action, Comédie, Drame, Thriller & policier…), à partir des genres TMDB et des noms de catégories du fournisseur (« COMEDIE [FR] », « KOMEDIE [NL] »…).
+- **Fiches séries** : épisodes de gauche à droite, avec défilement jusqu'au prochain épisode à voir. Les titres d'épisodes sont nettoyés (« Show (2024) - S01E01 - Titre » → « Titre »).
+- **Barre d'état du téléphone** : masquée par-dessus le contenu qui défile.
+- **Tampon du direct et abonnements à une seule connexion** :
+  - l'enregistrement continuait 2 min après la fermeture du lecteur et occupait la connexion (le fournisseur refusait ensuite avec 509 ou 407) ;
+  - il n'y a plus qu'un enregistrement à la fois ; il s'arrête à la fermeture du lecteur (`/tsh/stop`) ou dès qu'un autre type de flux est lu ;
+  - en cas de refus, l'enregistreur attend de plus en plus longtemps puis abandonne ; au démarrage, il réessaie quelques secondes le temps que la connexion précédente soit libérée.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

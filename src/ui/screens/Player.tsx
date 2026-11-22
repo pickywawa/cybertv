@@ -22,6 +22,7 @@ import { langPrefs, subMode } from '@/core/prefs';
 import { toLang } from '@/core/util/lang';
 import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
 import { Img } from '../components/Img';
+import { stopTimeshift } from '@/core/net/http';
 import { useTraktScrobble } from '../hooks/useTraktScrobble';
 import { Menu } from '../components/Overlay';
 import {
@@ -90,6 +91,7 @@ export function Player({ req }: { req: PlayRequest }) {
     return () => {
       eng.destroy();
       engineRef.current = null;
+      stopTimeshift();
       if (isAndroidApp && !isTvMode()) {
         void CyberNative.setOrientation({ mode: 'auto' }).catch(() => {});
         void CyberNative.setImmersive({ on: false }).catch(() => {});
@@ -115,6 +117,8 @@ export function Player({ req }: { req: PlayRequest }) {
     const c = cands[candIdx];
     if (!eng || !c) return;
     edgeLag.current = null;
+    // the subscription's single connection must not stay held by a recording nobody watches
+    if (!c.url.includes('/tsh/start/')) stopTimeshift();
     lastPos.current = -1;
     void eng.load(c.url, { startAt: candIdx === 0 ? req.startAt : undefined, live: mode === 'live' });
     // eslint-disable-next-line react-hooks/exhaustive-deps

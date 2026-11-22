@@ -71,14 +71,15 @@ export function programBoost(p: Program | undefined, at = Date.now()): number {
   const cat = p.category || '';
   const text = `${p.title} ${p.subTitle || ''}`;
   const sport = SPORT_CAT.test(cat) || SPORT_CAT.test(p.title);
-  if (sport && LIVE_EVENT.test(text)) b += 70;
-  if (BIG_EVENT.test(text)) b += 40;
-  if (NEWS.test(p.title)) b += 10;
+  // small on purpose: TF1, France 2… stay on top, a live match only passes channels of similar audience
+  if (sport && LIVE_EVENT.test(text)) b += 6;
+  if (BIG_EVENT.test(text)) b += 6;
+  if (NEWS.test(p.title)) b += 2;
   const h = new Date(at).getHours();
-  if (MOVIE_CAT.test(cat) && h >= 20 && h <= 22) b += 8;
+  if (MOVIE_CAT.test(cat) && h >= 20 && h <= 22) b += 2;
   // a programme that just started is more attractive than one ending in 5 minutes
   const left = p.stop - at;
-  if (left > 0 && left < 8 * 60000) b -= 6;
+  if (left > 0 && left < 8 * 60000) b -= 2;
   return b;
 }
 

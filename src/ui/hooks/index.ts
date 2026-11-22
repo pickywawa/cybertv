@@ -26,6 +26,11 @@ export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList, opts: { 
   const epgVersion = useApp((s) => (opts.epg ? s.epgVersion : 0));
   const [v, setV] = useState<T | undefined>(() => (opts.key ? cached<T>(opts.key) : undefined));
   const seq = useRef(0);
+  const applied = useRef(0);
+  const running = useRef(false);
+  const again = useRef(false);
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
   const lastKey = useRef(opts.key);
   if (opts.key !== lastKey.current) {
     // another query (e.g. other filter): show its cached result, never the previous query's
@@ -34,16 +39,38 @@ export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList, opts: { 
     if (c !== v) setV(c);
   }
   useEffect(() => {
-    const id = ++seq.current;
-    const key = opts.key;
-    fn().then(
-      (r) => {
-        if (id !== seq.current) return;
-        if (key) primeCache(key, r);
-        setV(r);
-      },
-      (e) => console.warn('[query]', e),
-    );
+    /**
+     * One run at a time: while a slow query runs (big guide on a phone, sync writing the guide),
+     * new triggers only ask for one more run afterwards. A result is shown as long as it is the
+     * newest one for the current key — a slow query is never thrown away just because data moved.
+     */
+    const go = () => {
+      if (running.current) {
+        again.current = true;
+        return;
+      }
+      running.current = true;
+      const id = ++seq.current;
+      const key = lastKey.current;
+      fnRef.current()
+        .then(
+          (r) => {
+            if (key !== lastKey.current || id <= applied.current) return;
+            applied.current = id;
+            if (key) primeCache(key, r);
+            setV(r);
+          },
+          (e) => console.warn('[query]', e),
+        )
+        .finally(() => {
+          running.current = false;
+          if (again.current) {
+            again.current = false;
+            go();
+          }
+        });
+    };
+    go();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, opts.key, catalogVersion, epgVersion]);
   return v;

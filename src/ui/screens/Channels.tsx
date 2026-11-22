@@ -12,6 +12,7 @@ import { BackButton } from '../components/BackButton';
 import { Rail } from '../components/Rail';
 import { ProgramSheet } from './Guide';
 import { playChannel } from '../actions';
+import { setGuideList } from '../guideList';
 import { IcCalendar, IcPlay, IcRestart } from '../icons';
 
 export function ChannelPage({ id }: { id: string }) {
@@ -66,7 +67,7 @@ export function ChannelPage({ id }: { id: string }) {
                 <IcRestart /> {t('tv.startOver')}
               </button>
             )}
-            <button className="btn" data-f onClick={() => push({ name: 'guide', channelId: ch.id })}>
+            <button className="btn" data-f onClick={() => (setGuideList(null), push({ name: 'guide', channelId: ch.id }))}>
               <IcCalendar /> {t('tv.guide')}
             </button>
           </div>

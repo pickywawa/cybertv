@@ -176,13 +176,27 @@ final class Timeshift {
         }
 
         private void loop() {
+            int failures = 0;
             while (!stopped) {
                 try {
                     Object[] r = get(url);
                     url = (String) r[1];
                     ingest(new String((byte[]) r[0], StandardCharsets.UTF_8), url);
+                    failures = 0;
                 } catch (Exception e) {
                     Log.d(TAG, name + " poll failed: " + e.getMessage());
+                    // refused (one-connection subscriptions answer 509 / 407…): back off, then give up
+                    if (++failures >= 8) {
+                        s.stop();
+                        sessions.remove(s.id);
+                        return;
+                    }
+                    try {
+                        Thread.sleep(Math.min(15000, 1000L << failures));
+                    } catch (InterruptedException ie) {
+                        return;
+                    }
+                    continue;
                 }
                 synchronized (this) {
                     if (segs.size() >= 2 && !isReady) {
@@ -392,17 +406,25 @@ final class Timeshift {
                 return s;
             }
         }
-        // switching to another live: keep at most 2 recordings (the oldest stops)
-        while (sessions.size() >= 2) {
-            Session oldest = null;
-            for (Session s : sessions.values()) if (oldest == null || s.last < oldest.last) oldest = s;
-            if (oldest == null) break;
-            oldest.stop();
-            sessions.remove(oldest.id);
-        }
+        // one recording at a time: many subscriptions allow a single stream, the previous one must stop first
+        stopAll();
         Session s = new Session(max, url);
         try {
-            Object[] r = get(url);
+            // a subscription limited to one stream refuses (407 / 509 / 429) until the previous one is released
+            Object[] r = null;
+            for (int attempt = 0; r == null; attempt++) {
+                try {
+                    r = get(url);
+                } catch (IOException e) {
+                    String m = String.valueOf(e.getMessage());
+                    if (attempt >= 4 || !(m.contains("407") || m.contains("509") || m.contains("429") || m.contains("PROXY_AUTH"))) throw e;
+                    try {
+                        Thread.sleep(1500);
+                    } catch (InterruptedException ie) {
+                        throw e;
+                    }
+                }
+            }
             String text = new String((byte[]) r[0], StandardCharsets.UTF_8);
             String base = (String) r[1];
             if (!text.trim().startsWith("#EXTM3U")) throw new IOException("not HLS");
@@ -487,6 +509,12 @@ final class Timeshift {
         s.master = m.toString();
     }
 
+    /** player closed / another kind of stream: nothing may keep using the subscription */
+    synchronized void stopAll() {
+        for (Session s : sessions.values()) s.stop();
+        sessions.clear();
+    }
+
     // ───────────────────────── serving ─────────────────────────
 
     interface Writer {
@@ -497,6 +525,11 @@ final class Timeshift {
         String[] parts = path.substring(1).split("/"); // tsh, ...
         Map<String, String> h = new HashMap<>();
         h.put("Cache-Control", "no-store");
+        if (parts.length >= 2 && "stop".equals(parts[1])) {
+            stopAll();
+            w.head(204, "No Content", h, 0);
+            return;
+        }
         if (parts.length >= 2 && "start".equals(parts[1])) {
             String u = q.get("u");
             double max = 1800;

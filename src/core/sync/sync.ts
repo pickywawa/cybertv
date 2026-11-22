@@ -424,7 +424,43 @@ export async function syncEpg(profileId: string, secrets: Record<string, string 
     setPrefetchSince(null);
   }
   await db.programs.where('start').below(Date.now() - 8 * 86400000).delete();
+  await fillMissingEpgIds(profileId);
   await setMeta(`epg:last:${profileId}`, Date.now());
+}
+
+/**
+ * Providers often give a guide id only to some versions of a channel ("TF1 HD" has tf1.fr,
+ * "TF1 UHD/4K" has none). The others take it from a sibling (same channel) or from their
+ * iptv-org id when the guide knows it, so every version shows its programmes.
+ */
+export async function fillMissingEpgIds(profileId: string): Promise<number> {
+  const all = await db.channels.where('profileId').equals(profileId).toArray();
+  const byGroup = new Map<string, string>();
+  const known = new Set<string>();
+  for (const c of all) {
+    if (!c.epgId) continue;
+    known.add(c.epgId);
+    if (!byGroup.has(c.groupKey)) byGroup.set(c.groupKey, c.epgId);
+  }
+  const patches: { id: string; changes: Partial<Channel> }[] = [];
+  for (const c of all) {
+    const changes: Partial<Channel> = {};
+    if (!c.epgId) {
+      const iptv = c.iptvId?.toLowerCase().replace(/@.*$/, '');
+      const id = byGroup.get(c.groupKey) || (iptv && known.has(iptv) ? iptv : undefined);
+      if (id) changes.epgId = id;
+    }
+    // names stored before the cleaner removed provider junk ("TF1 //")
+    const clean = cleanName(c.name);
+    if (clean !== c.name) changes.name = clean;
+    if (Object.keys(changes).length) patches.push({ id: c.id, changes });
+  }
+  if (patches.length) {
+    await db.transaction('rw', db.channels, async () => {
+      for (const p of patches) await db.channels.update(p.id, p.changes);
+    });
+  }
+  return patches.length;
 }
 
 async function syncEpgUrls(

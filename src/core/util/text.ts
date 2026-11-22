@@ -35,7 +35,7 @@ export function cleanName(raw: string): string {
   s = s.replace(QUALITY_RE, '');
   s = s.replace(/\b(MULTI|VFF|VFQ|VF|VOSTFR|VOST|TRUEFRENCH|FRENCH|HDR10?\+?|HDR|DV|DOLBY VISION|BACKUP|RAW|\+1)\b/gi, '');
   s = s.replace(/[\[(]\s*[)\]]/g, '');
-  s = s.replace(/\s*[|•·]\s*$/g, '').replace(/^\s*[|•·:\-–]\s*/g, '');
+  s = s.replace(/[\s|•·/\\\-–]+$/g, '').replace(/^[\s|•·:/\\\-–]+/g, '');
   s = s.replace(/\s{2,}/g, ' ').trim();
   return s || raw.trim();
 }
@@ -109,4 +109,17 @@ export const uid = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
 /** provider episode titles that carry no information ("Episode 3", "S01E03") */
-export const isGenericEpisodeTitle = (t?: string) => !t || /^((É|E)pisode\s*\d+|S\d+\s*[._-]?\s*E\d+)$/i.test(t.trim());
+const EP_PREFIX = /^.*?\bS\d{1,2}\s*[._-]?\s*E\d{1,4}\b\s*[-–:|·.]*\s*(.*)$/i;
+/** no real title: "Episode 3", "S01E02", "Show (2020) - S01E02" */
+export const isGenericEpisodeTitle = (t?: string) => !t || /^((É|E)pisode\s*\d+)$/i.test(t.trim()) || EP_PREFIX.exec(t.trim())?.[1].trim() === '';
+
+/**
+ * Provider episode names repeat the show and the number: "Where's Wanda? (2024) - S01E01 - Les Klatt"
+ * → "Les Klatt" (unchanged when nothing but the number would remain).
+ */
+export function cleanEpisodeTitle(t?: string): string {
+  if (!t) return '';
+  const m = t.match(EP_PREFIX);
+  const rest = m ? m[1].trim() : t.trim();
+  return rest || t.trim();
+}

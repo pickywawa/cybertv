@@ -8,6 +8,8 @@ const config: CapacitorConfig = {
   android: {
     // IPTV providers are mostly plain HTTP; the page itself runs on http://localhost
     allowMixedContent: true,
+    // CYBER_INSPECT=1: release build whose WebView can be inspected (on-device debugging, never published)
+    webContentsDebuggingEnabled: process.env.CYBER_INSPECT === '1',
   },
   server: {
     androidScheme: 'http',

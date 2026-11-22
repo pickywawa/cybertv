@@ -47,14 +47,20 @@ describe('channel ranking', () => {
     expect(channelRank({ name: 'Canal+' }, 'FR')).toBeDefined();
     expect(channelRank({ name: 'France 3 Paris Île-de-France' }, 'FR')).toBeGreaterThan(channelRank({ name: 'France 3' }, 'FR')!);
   });
-  it('puts national channels first and boosts live football', () => {
+  it('keeps national channels first; a live match only passes channels of similar audience', () => {
     const list = [ch('Some Local TV', 1), ch('France 2', 2), ch('TF1', 3), ch('RMC Sport 1', 4, { epgId: 'rmc' })];
     const prefs = { audio: ['fr'], subs: ['fr'] };
     expect(rankChannels(list, { country: 'FR', prefs }).map((c) => c.name).slice(0, 2)).toEqual(['TF1', 'France 2']);
     const at = Date.now();
     const programs = new Map([['rmc', { epgId: 'rmc', start: at - 600000, stop: at + 5400000, title: 'PSG - OM', category: 'Football' }]]);
-    expect(programBoost(programs.get('rmc'), at)).toBeGreaterThan(30);
-    expect(rankChannels(list, { country: 'FR', prefs, programs, at })[0].name).toBe('RMC Sport 1');
+    expect(programBoost(programs.get('rmc'), at)).toBeGreaterThan(0);
+    expect(rankChannels(list, { country: 'FR', prefs, programs, at })[0].name).toBe('TF1');
+    // L'Équipe and RMC Sport are close in audience: the one showing the match comes first
+    const sport = [ch('RMC Sport 1', 1), ch("L'Equipe", 2, { epgId: 'eq' })];
+    const p2 = new Map([['eq', { epgId: 'eq', start: at - 600000, stop: at + 5400000, title: 'Nantes - Lens', category: 'Football' }]]);
+    expect(rankChannels(sport, { country: 'FR', prefs, programs: p2, at })[0].name).toBe("L'Equipe");
+    // provider junk around names
+    expect(rankChannels([ch('TF1 //', 1), ch('FRANCE 2 /', 2)], { country: 'FR', prefs })[0].name).toBe('TF1 //');
   });
   it('pushes foreign-language channels down', () => {
     const list = [ch('BBC One', 1, { langs: ['en'], country: 'GB' }), ch('W9', 2)];

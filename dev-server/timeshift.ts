@@ -96,17 +96,27 @@ class Track {
     clearTimeout(this.timer);
   }
 
+  private failures = 0;
+
   private async poll() {
     if (this.stopped) return;
+    let wait = Math.max(1000, (this.target * 1000) / 2);
     try {
       const { text, url } = await fetchText(this.url);
       this.url = url;
       await this.ingest(text, url);
+      this.failures = 0;
     } catch {
-      /* transient: next poll */
+      // refused (one-connection subscriptions answer 509 / 407…): back off, then give up
+      if (++this.failures >= 8) {
+        this.s.stop();
+        sessions.delete(this.s.id);
+        return;
+      }
+      wait = Math.min(15000, 1000 * 2 ** this.failures);
     }
     if (this.segs.length >= 2) this.resolveReady();
-    if (!this.stopped) this.timer = setTimeout(() => void this.poll(), Math.max(1000, (this.target * 1000) / 2));
+    if (!this.stopped) this.timer = setTimeout(() => void this.poll(), wait);
   }
 
   private async ingest(text: string, base: string) {
@@ -266,15 +276,20 @@ function start(url: string, max: number): Promise<Session> {
 }
 
 async function create(url: string, max: number): Promise<Session> {
-  // switching to another live: recordings not watched any more stop soon (keep at most 2)
-  const old = [...sessions.values()].sort((a, b) => a.last - b.last);
-  while (old.length >= 2) {
-    const x = old.shift()!;
-    x.stop();
-    sessions.delete(x.id);
-  }
+  // one recording at a time: many subscriptions allow a single stream, the previous one must stop first
+  stopTimeshift();
   const s = new Session(max, url);
-  const { text, url: base } = await fetchText(url);
+  // a subscription limited to one stream refuses (407 / 509 / 429) until the previous one is released
+  let got: { text: string; url: string } | null = null;
+  for (let attempt = 0; !got; attempt++) {
+    try {
+      got = await fetchText(url);
+    } catch (e) {
+      if (attempt >= 4 || !/40[7]|509|429/.test(String((e as Error).message))) throw e;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  const { text, url: base } = got;
   if (!/^#EXTM3U/.test(text.trimStart())) throw new Error('not HLS');
   if (text.includes('#EXT-X-STREAM-INF')) {
     const v = pickVariant(text, base);
@@ -319,6 +334,12 @@ export async function timeshiftHandle(req: IncomingMessage, res: ServerResponse,
   res.setHeader('Cache-Control', 'no-store');
   const parts = u.pathname.split('/').filter(Boolean); // tsh, ...
   try {
+    if (parts[1] === 'stop') {
+      stopTimeshift();
+      res.statusCode = 204;
+      res.end();
+      return true;
+    }
     if (parts[1] === 'start') {
       const target = u.searchParams.get('u') || '';
       const max = Math.min(4 * 3600, Math.max(60, parseInt(u.searchParams.get('max') || '1800', 10)));

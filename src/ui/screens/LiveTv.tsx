@@ -11,6 +11,7 @@ import { VirtualGrid } from '../components/VirtualGrid';
 import { Menu, Sheet } from '../components/Overlay';
 import { IcCalendar, IcHeart, IcHeartFill, IcPlay, IcRestart, IcHd, IcInfo } from '../icons';
 import { openChannel, playChannel } from '../actions';
+import { setGuideList } from '../guideList';
 import { isTvMode } from '@/core/platform';
 import { langPrefs, profileCountry } from '@/core/prefs';
 import { matchesLangs, rankChannels } from '@/core/channelRank';
@@ -107,7 +108,7 @@ export function LiveTv() {
             </button>
           ))}
         </div>
-        <button className="btn-guide" data-f onClick={() => push({ name: 'guide' })}>
+        <button className="btn-guide" data-f onClick={() => (setGuideList(zapList), push({ name: 'guide' }))}>
           <IcCalendar /> {!narrow && t('tv.guide')}
         </button>
       </div>

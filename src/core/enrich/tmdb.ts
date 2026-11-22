@@ -8,7 +8,8 @@ export const img = (path: string | null | undefined, size: 'w92' | 'w185' | 'w30
 /** Rewrites a stored TMDB image url to another size (we store w342 posters / w1280 backdrops) */
 export function resizeTmdb(url: string | undefined, size: string): string | undefined {
   if (!url) return url;
-  return url.replace(/(image\.tmdb\.org\/t\/p\/)(w\d+|original)/, `$1${size}`);
+  // the whole size segment: providers store "w600_and_h900_bestv2" style urls (not valid with another size prefix)
+  return url.replace(/(image\.tmdb\.org\/t\/p\/)[^/]+/, `$1${size}`);
 }
 
 export interface TmdbDetails {

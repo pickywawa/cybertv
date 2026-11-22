@@ -21,6 +21,12 @@ export function getProxyBase() {
  * Live HLS through the local timeshift recorder (pause / rewind up to `maxSec`): the desktop app,
  * the dev server and the Android proxy have one; null elsewhere (iOS, plain web).
  */
+/** ends the local live recording (player closed, catch-up or VOD instead) */
+export function stopTimeshift(): void {
+  const base = proxyBase?.startsWith('http') ? proxyBase.replace(/\/proxy\?u=$/, '') : '';
+  if (base) void fetch(`${base}/tsh/stop`).catch(() => {});
+}
+
 export function timeshiftUrl(url: string, maxSec: number): string | null {
   let path = '';
   try {

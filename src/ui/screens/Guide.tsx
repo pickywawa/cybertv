@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useApp } from '@/state/store';
 import { t, fmtTime, fmtDate } from '@/core/i18n';
-import { liveChannels, programsInRange } from '@/core/repo';
+import { liveChannels, programsForMany } from '@/core/repo';
+import { db } from '@/core/db';
+import { getGuideList } from '../guideList';
 import type { Channel, Program } from '@/core/types';
 import { canCatchup } from '@/core/sources/urls';
 import { useAsync, useNow } from '../hooks';
@@ -16,6 +18,8 @@ import { langPrefs, profileCountry } from '@/core/prefs';
 import { matchesLangs, rankChannels } from '@/core/channelRank';
 
 const ROW_H = 64;
+/** last programmes per day, so the guide reopens at once */
+const GUIDE_CACHE = new Map<string, Map<string, Program[]>>();
 const CH_W = 120;
 const PX_PER_MIN = 4.2;
 
@@ -34,15 +38,53 @@ export function Guide({ channelId }: { channelId?: string }) {
   }, [dayOffset]);
   const dayEnd = day0 + 86400000 + 3 * 3600000;
 
-  const channels = useAsync(() => liveChannels(profile.id, { hideAdult: settings.hideAdult }), [profile.id], { key: `live:${profile.id}:${settings.hideAdult}` });
-  const progs = useAsync(() => programsInRange(day0, dayEnd), [day0], { epg: true, key: `guide:${day0}` });
-  // same order as the TV tab (national ranking × user languages), without the "on air" boost so rows don't move
+  // channels: the TV tab's current list (same category, same order); otherwise the ranked ones
+  const epgVersion = useApp((st) => st.epgVersion);
+  const channels = useAsync(
+    async () => {
+      const ids = getGuideList();
+      if (ids?.length) return (await db.channels.bulkGet(ids)).filter(Boolean) as Channel[];
+      const all = await liveChannels(profile.id, { hideAdult: settings.hideAdult });
+      const prefs = langPrefs(profile);
+      const mine = all.filter((c) => c.epgId && matchesLangs(c, prefs));
+      return rankChannels(mine.length >= 5 ? mine : all.filter((c) => c.epgId), { country: profileCountry(profile), prefs });
+    },
+    [profile.id],
+    { key: `guide:ch:${profile.id}:${settings.hideAdult}:${getGuideList()?.length ?? 0}:${getGuideList()?.[0] ?? ''}` },
+  );
+  // programmes: the first rows at once, the others in the background, chunk by chunk
+  const [progs, setProgs] = useState<Map<string, Program[]> | null>(() => GUIDE_CACHE.get(`${day0}`) || null);
+  useEffect(() => {
+    if (!channels) return;
+    let off = false;
+    const ids = [...new Set(channels.map((c) => c.epgId).filter(Boolean) as string[])];
+    setProgs(GUIDE_CACHE.get(`${day0}`) || null);
+    void (async () => {
+      const acc = new Map<string, Program[]>();
+      for (let i = 0; i < ids.length && !off; i += i === 0 ? 40 : 250) {
+        const part = await programsForMany(ids.slice(i, i + (i === 0 ? 40 : 250)), day0, dayEnd);
+        if (off) return;
+        for (const [k, v] of part) acc.set(k, v);
+        setProgs(new Map(acc));
+      }
+      if (!off) GUIDE_CACHE.set(`${day0}`, acc);
+    })();
+    return () => {
+      off = true;
+    };
+  }, [channels, day0, dayEnd, epgVersion]);
   const rows = useMemo(() => {
-    const prefs = langPrefs(profile);
-    const withEpg = (channels || []).filter((c) => c.epgId && progs?.has(c.epgId));
-    const mine = withEpg.filter((c) => matchesLangs(c, prefs));
-    return rankChannels(mine.length >= 5 ? mine : withEpg, { country: profileCountry(profile), prefs });
-  }, [channels, progs, profile]);
+    const seen = new Set<string>();
+    // the TV tab's list as is (channels without programmes too, so both screens match);
+    // in long lists ("All channels"), only the first ones without programmes
+    return (channels || []).filter((c, i) => {
+      const key = c.epgId || c.groupKey;
+      if (seen.has(key)) return false;
+      const keep = progs?.has(c.epgId!) || (!!getGuideList() && i < 120);
+      if (keep) seen.add(key);
+      return keep;
+    });
+  }, [channels, progs]);
   const totalW = CH_W + ((dayEnd - day0) / 60000) * PX_PER_MIN;
   const x = (ts: number) => CH_W + ((ts - day0) / 60000) * PX_PER_MIN;
 
@@ -96,7 +138,7 @@ export function Guide({ channelId }: { channelId?: string }) {
         </div>
       </div>
       <div className="guide-body" ref={bodyRef}>
-        {!channels || !progs ? (
+        {!channels || !progs || (!rows.length && progs.size === 0) ? (
           <div className="spinner big" style={{ margin: '60px auto' }} />
         ) : rows.length === 0 ? (
           <div className="empty">{t('tv.noProgram')}</div>
@@ -112,12 +154,17 @@ export function Guide({ channelId }: { channelId?: string }) {
             {now >= day0 && now < dayEnd && <div className="guide-now" style={{ left: x(now) }} />}
             {v.getVirtualItems().map((r) => {
               const ch = rows[r.index];
-              const list = progs.get(ch.epgId!) || [];
+              const list = (ch.epgId && progs.get(ch.epgId)) || [];
               return (
                 <div key={ch.id} className="guide-row" data-row style={{ top: r.start, width: totalW }}>
-                  <div className="guide-ch" title={ch.name}>
+                  <div className="guide-ch" title={ch.name} onClick={() => void playChannel(ch)}>
                     <Img srcs={[ch.logo, ch.logoAlt]} contain label={ch.name} alt={ch.name} />
                   </div>
+                  {!list.length && (
+                    <div className="guide-empty" style={{ left: CH_W }}>
+                      {t('tv.noProgram')}
+                    </div>
+                  )}
                   {list.map((p) => {
                     const l = Math.max(CH_W, x(p.start));
                     const w = Math.max(24, x(Math.min(p.stop, dayEnd)) - l - 3);

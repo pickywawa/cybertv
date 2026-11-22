@@ -1,7 +1,7 @@
 import { db, getMeta, setMeta } from './db';
 import type { Channel, Episode, Favorite, Movie, Program, Series, Source, TmdbListItem, Universe, WatchState } from './types';
 import { listsKey, type TmdbLists } from './enrich/enrich';
-import { movieGroupKey, seriesGroupKey, QUALITY_RANK } from './util/text';
+import { cleanName, movieGroupKey, seriesGroupKey, QUALITY_RANK } from './util/text';
 import { secureGet, sourcePassKey } from './secure';
 import { sortByLang, type LangPrefs } from './util/lang';
 
@@ -81,7 +81,8 @@ export function pickRepresentatives(channels: Channel[], prio: Map<string, numbe
     const pb = prio.get(cur.sourceId)!;
     if (pa < pb || (pa === pb && (QUALITY_RANK[String(c.quality)] ?? 0) > (QUALITY_RANK[String(cur.quality)] ?? 0))) best.set(c.groupKey, c);
   }
-  return [...best.values()].sort((a, b) => a.num - b.num);
+  // names stored before the cleaner removed provider junk ("TF1 //")
+  return [...best.values()].map((c) => (/[/\\|]\s*$/.test(c.name) ? { ...c, name: cleanName(c.name) } : c)).sort((a, b) => a.num - b.num);
 }
 
 export async function liveChannels(profileId: string, opts: { hideAdult: boolean }): Promise<Channel[]> {
@@ -107,7 +108,8 @@ export interface NowNext {
 
 /** current + next program for every epgId, one indexed range query */
 export async function nowNext(at = Date.now()): Promise<Map<string, NowNext>> {
-  const rows = await db.programs.where('start').between(at - 12 * 3600000, at + 6 * 3600000).toArray();
+  // 6 h back is enough for what is on air (a 12 h window doubled the rows read every minute)
+  const rows = await db.programs.where('start').between(at - 6 * 3600000, at + 6 * 3600000).toArray();
   rows.sort((a, b) => a.start - b.start);
   const map = new Map<string, NowNext>();
   for (const p of rows) {
@@ -138,6 +140,21 @@ export async function tonight(startMin: number): Promise<Map<string, Program>> {
 
 export async function programsFor(epgId: string, from: number, to: number): Promise<Program[]> {
   return db.programs.where('[epgId+start]').between([epgId, from - 6 * 3600000], [epgId, to]).filter((p) => p.stop > from).toArray();
+}
+
+/** programmes of the given guide ids over a period: indexed reads per channel, one read transaction */
+export async function programsForMany(epgIds: string[], from: number, to: number): Promise<Map<string, Program[]>> {
+  const map = new Map<string, Program[]>();
+  await db.transaction('r', db.programs, async () => {
+    await Promise.all(
+      epgIds.map(async (id) => {
+        const rows = await db.programs.where('[epgId+start]').between([id, from - 6 * 3600000], [id, to]).toArray();
+        const list = rows.filter((p) => p.stop > from);
+        if (list.length) map.set(id, list);
+      }),
+    );
+  });
+  return map;
 }
 
 export async function programsInRange(from: number, to: number): Promise<Map<string, Program[]>> {

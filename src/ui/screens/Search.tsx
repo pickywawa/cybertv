@@ -13,6 +13,7 @@ import { dedupLang } from '@/core/repo';
 import { PosterCard, LandCard, LogoTile } from '../components/Cards';
 import { Rail } from '../components/Rail';
 import { IcMic, IcSearch, IcClose } from '../icons';
+import { takePendingSearch } from '../voice/run';
 import { openChannel, openMovie, openSeries, playChannel, prioritizeEnrichment } from '../actions';
 import { ProgramSheet } from './Guide';
 
@@ -38,7 +39,16 @@ export function Search() {
   const settings = useApp((s) => s.settings);
   const update = useApp((s) => s.updateSettings);
   const toast = useApp((s) => s.toast);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(() => takePendingSearch() || '');
+  // "recherche Dune" said while the screen is already open
+  useEffect(() => {
+    const h = () => {
+      const v = takePendingSearch();
+      if (v) setQ(v);
+    };
+    window.addEventListener('cyber:voice-search', h);
+    return () => window.removeEventListener('cyber:voice-search', h);
+  }, []);
   const [res, setRes] = useState<Results | null>(null);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);

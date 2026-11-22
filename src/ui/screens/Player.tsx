@@ -610,6 +610,31 @@ export function Player({ req }: { req: PlayRequest }) {
 
   const close = () => playStore(null);
 
+  // voice commands while watching ("pause", "recule de 30 secondes", "chaîne suivante"…)
+  const voiceRef = useRef({ togglePlay, seekBy, zapBy, goLive, close, dvr, lag, mode });
+  voiceRef.current = { togglePlay, seekBy, zapBy, goLive, close, dvr, lag, mode };
+  useEffect(() => {
+    const h = (e: Event) => {
+      const { action, seconds } = (e as CustomEvent<{ action: string; seconds?: number }>).detail;
+      const v = voiceRef.current;
+      const s = stRef.current;
+      const playingNow = s.status === 'playing' || s.status === 'buffering';
+      if (action === 'pause' && playingNow) v.togglePlay();
+      else if (action === 'resume' && !playingNow) v.togglePlay();
+      else if (action === 'back') v.seekBy(-(seconds || 30));
+      else if (action === 'forward') v.seekBy(seconds || 30);
+      else if (action === 'live') {
+        if (v.mode === 'live' && v.dvr) engineRef.current?.seek(s.seekableEnd - v.lag);
+        else if (v.mode !== 'vod') void v.goLive();
+      } else if (action === 'next') v.zapBy(1);
+      else if (action === 'prev') v.zapBy(-1);
+      else if (action === 'stop') v.close();
+      poke();
+    };
+    window.addEventListener('cyber:voice-player', h);
+    return () => window.removeEventListener('cyber:voice-player', h);
+  }, [poke]);
+
   // ───────── render values ─────────
   const loading = st.status === 'loading' || st.status === 'buffering';
   const playing = st.status === 'playing' || st.status === 'buffering';

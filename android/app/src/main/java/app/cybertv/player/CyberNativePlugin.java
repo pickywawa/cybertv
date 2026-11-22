@@ -335,7 +335,7 @@ public class CyberNativePlugin extends Plugin {
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, call.getString("lang", Locale.getDefault().toLanguageTag()));
         i.putExtra(RecognizerIntent.EXTRA_PROMPT, call.getString("prompt", ""));
-        i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
         if (i.resolveActivity(getContext().getPackageManager()) == null) {
             call.reject("unavailable");
             return;
@@ -350,7 +350,16 @@ public class CyberNativePlugin extends Plugin {
         ArrayList<String> list = data != null ? data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS) : null;
         JSObject r = new JSObject();
         r.put("text", list != null && !list.isEmpty() ? list.get(0) : "");
+        // the other guesses help match a channel name ("TF1" heard as "TF un"…)
+        com.getcapacitor.JSArray alts = new com.getcapacitor.JSArray();
+        if (list != null) for (String x : list) alts.put(x);
+        r.put("alternatives", alts);
         call.resolve(r);
+    }
+
+    /** the remote's voice / search key, sent by MainActivity */
+    void onVoiceKey() {
+        notifyListeners("voiceKey", new JSObject());
     }
 
     // ───────────────────────── window ─────────────────────────

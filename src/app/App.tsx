@@ -3,6 +3,7 @@ import { useApp } from '@/state/store';
 import { ProfilePicker } from '@/ui/screens/Profiles';
 import { Onboarding } from '@/ui/screens/Onboarding';
 import { Shell } from '@/ui/Shell';
+import { VoiceControl } from '@/ui/voice/VoiceControl';
 
 const Player = lazy(() => import('@/ui/screens/Player').then((m) => ({ default: m.Player })));
 
@@ -26,6 +27,7 @@ export function App() {
           <Player req={player} />
         </Suspense>
       )}
+      <VoiceControl />
       <div className="toasts">
         {toasts.map((t) => (
           <div key={t.id} className="toast">

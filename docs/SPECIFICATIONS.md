@@ -494,6 +494,21 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
   - le lecteur s'en sert pour la pause, -10/+10 s, la barre de temps et le bouton « Direct ». La distance naturelle du lecteur au direct est mesurée pour l'indicateur « Différé de… ». Le catch-up du fournisseur prend le relais au-delà de la fenêtre ;
   - Xtream : avec le tampon actif, la sortie m3u8 est demandée. Non disponible sur iOS ni pour les flux MPEG-TS seuls.
 
+### Commande vocale (V1.8, Android TV et téléphone)
+- Déclencheurs :
+  - la touche Recherche / Assistant vocal de la télécommande (`KEYCODE_SEARCH`, `KEYCODE_VOICE_ASSIST`), interceptée par `MainActivity` et transmise par l'événement `voiceKey` ;
+  - un bouton micro dans la barre du haut (TV et mobile).
+  - Les télécommandes dont le bouton micro ouvre Google Assistant au niveau du système ne l'envoient jamais aux applis : il reste le bouton de l'app.
+- Reconnaissance : reconnaisseur du système (`RecognizerIntent`, sans permission micro pour l'app), jusqu'à 5 transcriptions essayées dans l'ordre.
+- Interprétation locale (`src/core/voice/parse.ts`), en français et en anglais :
+  - onglets (« accueil », « en direct », « replay », « mes vidéos », « paramètres ») ;
+  - « recherche X » ;
+  - « mets / lance / regarde X » : chaîne au nom exact, sinon meilleur titre ;
+  - « la chaîne 5 », « le film X », « la série X » ;
+  - dans le lecteur : pause, reprise, recul / avance de N secondes ou minutes, retour au direct, chaîne suivante / précédente, arrêt ;
+  - les nombres en toutes lettres sont convertis ; « canal plus » privilégie les noms écrits avec un « + ».
+- Exécution (`src/ui/voice/run.ts`) : correspondance par l'index de recherche (chaînes, films, séries). Un film reprend là où il s'était arrêté, une série ouvre sa fiche. Si rien ne correspond, l'écran de recherche s'ouvre. Une bulle affiche ce qui a été compris et l'action faite.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

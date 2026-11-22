@@ -11,6 +11,7 @@ import { PinPad } from './components/PinPad';
 import { UpdateBanner } from './components/UpdateBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LiveTv } from './screens/LiveTv';
+import { VoiceButton } from './voice/VoiceControl';
 
 const Search = lazy(() => import('./screens/Search').then((m) => ({ default: m.Search })));
 const Replay = lazy(() => import('./screens/Replay').then((m) => ({ default: m.Replay })));
@@ -118,6 +119,7 @@ function TopNav({ tab, setTab, solid }: { tab: TabId; setTab: (t: TabId) => void
         ))}
       </nav>
       <div className="spacer" />
+      <VoiceButton />
       <button data-f className="icon-btn" onClick={() => setTab('search')} aria-label={t('nav.search')}>
         <IcSearch />
       </button>
@@ -143,6 +145,7 @@ function MobileTop({ tab }: { tab: TabId }) {
       ) : (
         <h1>{title}</h1>
       )}
+      <VoiceButton className="mtop-btn mtop-mic" />
       {tab !== 'settings' && (
         <button className="mtop-btn avatar" style={{ background: profile.color }} onClick={() => setTab('settings')} aria-label={t('nav.settings')}>
           {profile.emoji}

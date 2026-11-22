@@ -33,7 +33,7 @@ export interface CyberNativePlugin {
   secureGet(o: { key: string }): Promise<{ value: string | null }>;
   secureSet(o: { key: string; value: string }): Promise<void>;
   secureRemove(o: { key: string }): Promise<void>;
-  speech(o: { lang: string; prompt?: string }): Promise<{ text: string }>;
+  speech(o: { lang: string; prompt?: string }): Promise<{ text: string; alternatives?: string[] }>;
   setOrientation(o: { mode: 'landscape' | 'portrait' | 'auto' }): Promise<void>;
   setImmersive(o: { on: boolean }): Promise<void>;
 
@@ -64,6 +64,7 @@ export interface CyberNativePlugin {
   addListener(event: 'playerTracks', cb: (t: { tracks: NativeTrack[] }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'enrollReceived', cb: (t: { payload: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'pipChanged', cb: (t: { active: boolean }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'voiceKey', cb: () => void): Promise<PluginListenerHandle>;
 }
 
 export const CyberNative = registerPlugin<CyberNativePlugin>('CyberNative');

@@ -40,7 +40,9 @@ const api = {
   async syncSource(sourceId: string, password: string | undefined, onProgress: (p: SyncProgress) => void) {
     const s = await db.sources.get(sourceId);
     if (!s) return null;
-    return syncSource(s, password, onProgress);
+    const r = await syncSource(s, password, onProgress);
+    await fillMissingEpgIds(s.profileId);
+    return r;
   },
 
   prefetchPlan(profileId: string, secrets: Secrets) {

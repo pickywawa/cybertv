@@ -6,6 +6,7 @@ import { continueWatching, getProgress } from '@/core/repo';
 import type { Channel, WatchState } from '@/core/types';
 import { OFFICIAL_LIVE, officialFor, replayCatalog, replayInfo, replayShow, type OfficialLive, type ReplayCatalog, type ReplayItem, type ReplayProvider, type ReplayShow } from '@/core/replay';
 import { useAsync } from '../hooks';
+import { profileCountry } from '@/core/prefs';
 import { Rail } from '../components/Rail';
 import { LandCard, LogoTile } from '../components/Cards';
 import { Img } from '../components/Img';
@@ -14,7 +15,7 @@ import { openReplay, playChannel, playOfficial, playReplay, resume } from '../ac
 import { IcInfo, IcPlay, IcRefresh, IcRestart } from '../icons';
 
 const MEM = new Map<string, ReplayCatalog>();
-const PROVIDER_LABEL: Record<ReplayProvider, string> = { arte: 'ARTE', francetv: 'france.tv' };
+const PROVIDER_LABEL: Record<ReplayProvider, string> = { arte: 'ARTE', francetv: 'france.tv', youtube: 'YouTube' };
 type Filter = 'all' | ReplayProvider | 'kids';
 
 function lastDays(it: ReplayItem): number | null {
@@ -23,8 +24,18 @@ function lastDays(it: ReplayItem): number | null {
   return d > 0 && d <= 3 ? d : null;
 }
 
+/** "il y a 3 h" for YouTube videos */
+function ago(ts?: number): string | undefined {
+  if (!ts) return undefined;
+  const m = Math.max(1, Math.round((Date.now() - ts) / 60000));
+  if (m < 60) return t('yt.ago.m', { n: m });
+  if (m < 48 * 60) return t('yt.ago.h', { n: Math.round(m / 60) });
+  return t('yt.ago.d', { n: Math.round(m / 1440) });
+}
+
 function cardProps(it: ReplayItem) {
   const days = lastDays(it);
+  if (it.provider === 'youtube') return { title: it.title, sub: it.channel, sub2: ago(it.published), image: it.image, badge: undefined as string | undefined };
   return {
     title: it.title,
     sub: it.subtitle || it.channel,
@@ -37,18 +48,20 @@ function cardProps(it: ReplayItem) {
 export function Replay() {
   const profile = useApp((s) => s.profile)!;
   const lang = profile.lang;
-  const [cat, setCat] = useState<ReplayCatalog | null | undefined>(() => MEM.get(lang));
+  const country = profileCountry(profile);
+  const memKey = `${lang}:${country}`;
+  const [cat, setCat] = useState<ReplayCatalog | null | undefined>(() => MEM.get(memKey));
   const [filter, setFilter] = useState<Filter>('all');
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let off = false;
     // the saved copy shows at once, the network refreshes it when it is old
-    if (!MEM.has(lang)) void replayCatalog(lang, { cachedOnly: true }).then((c) => !off && c && setCat((x) => x ?? c));
-    replayCatalog(lang, { force: reload > 0 }).then(
+    if (!MEM.has(memKey)) void replayCatalog(lang, { cachedOnly: true, country }).then((c) => !off && c && setCat((x) => x ?? c));
+    replayCatalog(lang, { force: reload > 0, country }).then(
       (c) => {
         if (off || !c) return;
-        MEM.set(lang, c);
+        MEM.set(memKey, c);
         setCat(c);
       },
       () => !off && setCat((x) => x ?? null),
@@ -56,18 +69,27 @@ export function Replay() {
     return () => {
       off = true;
     };
-  }, [lang, reload]);
+  }, [lang, country, memKey, reload]);
 
   const cont = useAsync(async () => (await continueWatching(profile.id)).filter((w) => w.kind === 'replay'), [profile.id], { key: `replay:cont:${profile.id}` });
   const rails = useMemo(() => {
     if (!cat) return [];
     if (filter === 'kids') return cat.kids || [];
+    const yt = cat.youtube || [];
+    if (filter === 'youtube') return yt;
     const list = cat.rails.filter((r) => filter === 'all' || r.provider === filter);
-    // a taste of the youth catalogue in "All"
-    return filter === 'all' ? [...list.slice(0, 6), ...(cat.kids || []).slice(0, 1), ...list.slice(6)] : list;
+    if (filter !== 'all') return list;
+    // "All": broadcasters' replay, a taste of the youth catalogue, YouTube themes woven in
+    const out = [...list.slice(0, 4)];
+    const rest = [...list.slice(4, 6), ...(cat.kids || []).slice(0, 1), ...list.slice(6)];
+    for (let i = 0; i < Math.max(rest.length, yt.length); i++) {
+      if (yt[i]) out.push(yt[i]);
+      out.push(...rest.slice(i * 3, i * 3 + 3));
+    }
+    return out;
   }, [cat, filter]);
   const hero = useMemo(
-    () => (filter === 'kids' ? cat?.kidsHero || [] : (cat?.hero || []).filter((h) => filter === 'all' || h.provider === filter)),
+    () => (filter === 'kids' ? cat?.kidsHero || [] : filter === 'youtube' ? [] : (cat?.hero || []).filter((h) => filter === 'all' || h.provider === filter)),
     [cat, filter],
   );
 
@@ -75,7 +97,7 @@ export function Replay() {
     <div className="tab-replay">
       {hero.length > 0 ? <ReplayHero items={hero} /> : <div className="hero-spacer" />}
       <div className="chips" data-row>
-        {(['all', 'arte', 'francetv', 'kids'] as Filter[]).map((f) => (
+        {(['all', 'arte', 'francetv', 'youtube', 'kids'] as Filter[]).map((f) => (
           <button key={f} data-f className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
             {f === 'all' ? t('replay.all') : f === 'kids' ? t('replay.kids') : PROVIDER_LABEL[f]}
           </button>

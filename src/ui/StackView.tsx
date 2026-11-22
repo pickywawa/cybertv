@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const Detail = lazy(() => import('./screens/Detail').then((m) => ({ default: m.Detail })));
 const Guide = lazy(() => import('./screens/Guide').then((m) => ({ default: m.Guide })));
 const ChannelPage = lazy(() => import('./screens/Channels').then((m) => ({ default: m.ChannelPage })));
+const YouTubePage = lazy(() => import('./screens/YouTube').then((m) => ({ default: m.YouTubePage })));
 const ReplayPage = lazy(() => import('./screens/Replay').then((m) => ({ default: m.ReplayPage })));
 const Grid = lazy(() => import('./screens/Grid').then((m) => ({ default: m.Grid })));
 const SettingsSectionView = lazy(() => import('./screens/Settings').then((m) => ({ default: m.SettingsSectionView })));
@@ -26,6 +27,7 @@ export function StackView() {
       {r.name === 'guide' && <Guide channelId={r.channelId} />}
       {r.name === 'channel' && <ChannelPage id={r.id} />}
       {r.name === 'replay' && <ReplayPage id={r.id} item={r.item} />}
+      {r.name === 'youtube' && <YouTubePage id={r.id} title={r.title} />}
       {r.name === 'grid' && <Grid kind={r.kind} title={r.title} filter={r.filter} />}
       {r.name === 'settings-section' && <SettingsSectionView section={r.section} />}
       {r.name === 'source-edit' && <SourceEdit sourceId={r.sourceId} />}

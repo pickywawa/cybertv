@@ -527,6 +527,18 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
   - il n'y a plus qu'un enregistrement à la fois ; il s'arrête à la fermeture du lecteur (`/tsh/stop`) ou dès qu'un autre type de flux est lu ;
   - en cas de refus, l'enregistreur attend de plus en plus longtemps puis abandonne ; au démarrage, il réessaie quelques secondes le temps que la connexion précédente soit libérée.
 
+### YouTube, guide et confort (V1.10)
+- **YouTube dans Replay** : rails Documentaires, Actu, Sport, Humour, Médias et Radio, à partir des flux RSS publics des chaînes (sans clé, 15 dernières vidéos par chaîne, Shorts exclus, 8 vidéos par chaîne au plus et 30 par rail, les plus récentes d'abord).
+  - Chaînes françaises si l'app est en français (ARTE, France Culture, L'Équipe, RMC Sport, CANAL+ Sport, BFMTV, franceinfo, FRANCE 24, RTL, France Inter, Europe 1, NRJ, Montreux Comedy, Jamel Comedy Club, Palmashow, Norman, Cyprien, Brut, Konbini, Le Monde, Blast).
+  - Sinon, chaînes britanniques (pays GB ou IE) ou américaines (autres pays).
+  - Lecture dans le lecteur intégré de YouTube (youtube-nocookie), plein écran, en paysage sur téléphone, avec un bouton « Ouvrir dans YouTube » (application ou site).
+  - Filtre « YouTube » ; dans « Tout », les rails YouTube sont intercalés.
+- **Programme TV** : le guide national (xmltvfr, 7 jours) est lu avant celui du fournisseur, qui s'arrêtait après quelques heures pour M6, ARTE, W9, TFX… Il est rafraîchi seul toutes les 6 h, et les identifiants de guide manquants sont réparés après chaque synchro des chaînes.
+- **Direct** : la version Full HD d'une chaîne passe avant la 4K/UHD (trop lourde sur téléphone, souvent instable chez les fournisseurs).
+  - Le tampon du direct est prêt dès le premier segment, son démarrage ne bloque plus les autres requêtes, et il patiente jusqu'à ~15 s si le fournisseur considère encore le flux précédent comme actif (abonnements à une connexion, réponse 407).
+- **Logos de chaînes** contenus dans leur cadre, quelle que soit leur forme.
+- **Téléphones** : mode portrait verrouillé en dehors de la lecture ; la barre d'état est masquée au-dessus du contenu des onglets.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

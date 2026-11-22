@@ -3,7 +3,7 @@ import { db } from './db';
 import type { Channel, Episode, Movie, PlayRequest, Program, Series, Source } from './types';
 import { catchupUrl, episodeUrl, liveUrl, movieUrl, type Engine } from './sources/urls';
 import { loadSecrets, sourcesOf, watchKey } from './repo';
-import { QUALITY_RANK, detectQuality } from './util/text';
+import { LIVE_QUALITY_RANK, QUALITY_RANK, detectQuality } from './util/text';
 import { detectLangs, langScore, type LangPrefs } from './util/lang';
 import { langPrefs } from './prefs';
 import { useApp } from '@/state/store';
@@ -87,7 +87,7 @@ export async function channelVariants(ch: Channel): Promise<Channel[]> {
   return all.sort((a, b) => {
     if (a.id === ch.id) return -1;
     if (b.id === ch.id) return 1;
-    return order.get(a.sourceId)! - order.get(b.sourceId)! || (QUALITY_RANK[String(b.quality)] ?? 0) - (QUALITY_RANK[String(a.quality)] ?? 0);
+    return order.get(a.sourceId)! - order.get(b.sourceId)! || (LIVE_QUALITY_RANK[String(b.quality)] ?? 0) - (LIVE_QUALITY_RANK[String(a.quality)] ?? 0);
   });
 }
 

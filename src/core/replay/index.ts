@@ -3,12 +3,14 @@ import type { Channel, PlayRequest } from '../types';
 import { withTimeshift } from '../playback';
 import { arteCatalog, arteInfo, arteShow, arteStream } from './arte';
 import { ftvCatalog, ftvInfo, ftvKids, ftvShow, ftvStream } from './francetv';
+import { youtubeRails } from './youtube';
+import { t } from '../i18n';
 import type { ReplayCatalog, ReplayItem, ReplayProvider, ReplayRail, ReplayShow, ResolvedStream } from './types';
 
 export type { ReplayCatalog, ReplayItem, ReplayProvider, ReplayRail, ReplayShow } from './types';
 
 const TTL = 3 * 3600000;
-const metaKey = (lang: string) => `replay:catalog:v2:${lang}`;
+const metaKey = (lang: string, country = '') => `replay:catalog:v3:${lang}:${country}`;
 
 /** alternate both catalogues so neither buries the other */
 function interleave(a: ReplayRail[], b: ReplayRail[]): ReplayRail[] {
@@ -20,8 +22,9 @@ function interleave(a: ReplayRail[], b: ReplayRail[]): ReplayRail[] {
   return out;
 }
 
-async function fetchCatalog(lang: string): Promise<ReplayCatalog> {
-  const [arte, ftv, kids] = await Promise.allSettled([arteCatalog(lang), ftvCatalog(), ftvKids()]);
+async function fetchCatalog(lang: string, country: string): Promise<ReplayCatalog> {
+  const ytTitles = { docs: t('yt.docs'), sport: t('yt.sport'), news: t('yt.news'), radio: t('yt.radio'), humor: t('yt.humor'), media: t('yt.media') };
+  const [arte, ftv, kids, yt] = await Promise.allSettled([arteCatalog(lang), ftvCatalog(), ftvKids(), youtubeRails(lang, country, ytTitles)]);
   const k = kids.status === 'fulfilled' ? kids.value : { rails: [], hero: [] };
   const failed: ReplayProvider[] = [];
   const a = arte.status === 'fulfilled' ? arte.value : (failed.push('arte'), { rails: [], hero: [] });
@@ -31,21 +34,22 @@ async function fetchCatalog(lang: string): Promise<ReplayCatalog> {
     if (a.hero[i]) hero.push(a.hero[i]);
     if (f.hero[i]) hero.push(f.hero[i]);
   }
-  return { at: Date.now(), hero: hero.slice(0, 6), rails: interleave(a.rails, f.rails), kids: k.rails, kidsHero: k.hero, failed };
+  return { at: Date.now(), hero: hero.slice(0, 6), rails: interleave(a.rails, f.rails), kids: k.rails, kidsHero: k.hero, youtube: yt.status === 'fulfilled' ? yt.value : [], failed };
 }
 
 let inflight: Promise<ReplayCatalog> | null = null;
 
 /** saved copy first (instant), refreshed from the network when older than 3 h or when forced */
-export async function replayCatalog(lang: string, opts: { force?: boolean; cachedOnly?: boolean } = {}): Promise<ReplayCatalog | null> {
-  const saved = await getMeta<ReplayCatalog>(metaKey(lang)).catch(() => undefined);
+export async function replayCatalog(lang: string, opts: { force?: boolean; cachedOnly?: boolean; country?: string } = {}): Promise<ReplayCatalog | null> {
+  const country = opts.country || '';
+  const saved = await getMeta<ReplayCatalog>(metaKey(lang, country)).catch(() => undefined);
   if (opts.cachedOnly) return saved || null;
   if (saved && !opts.force && Date.now() - saved.at < TTL) return saved;
-  inflight ??= fetchCatalog(lang).finally(() => (inflight = null));
+  inflight ??= fetchCatalog(lang, country).finally(() => (inflight = null));
   const fresh = await inflight;
   // a failed refresh never replaces a good saved catalogue
   if (!fresh.rails.length && saved?.rails.length) return saved;
-  void setMeta(metaKey(lang), fresh).catch(() => {});
+  void setMeta(metaKey(lang, country), fresh).catch(() => {});
   return fresh;
 }
 

@@ -71,7 +71,7 @@ export function Shell() {
   return (
     <div className="app-shell" aria-hidden={!!player} inert={player ? true : undefined}>
       {!mobile && <TopNav tab={tab} setTab={setTab} solid={solid || !!route || tab !== 'home'} />}
-      <div className={`page ${mobile ? '' : ''}`} ref={pageRef} key={tab} inert={route ? true : undefined}>
+      <div className={`page page-${tab}`} ref={pageRef} key={tab} inert={route ? true : undefined}>
         {mobile && <MobileTop tab={tab} />}
         <ErrorBoundary onReset={() => setTab('home')}>
         <Suspense fallback={<div className="empty"><div className="spinner big" style={{ margin: 'auto' }} /></div>}>

@@ -40,3 +40,23 @@ describe('official live streams', () => {
     expect(officialFor({ groupKey: channelGroupKey('France 3 Alpes') })).toBeUndefined();
   });
 });
+
+import { parseYtFeed, ytChannels } from '../src/core/replay/youtube';
+describe('YouTube feeds', () => {
+  it('reads videos and leaves Shorts out', () => {
+    const xml = `<feed><title>BFMTV</title>
+<entry><yt:videoId>EQ3zCQe9Pm0</yt:videoId><title>Affaire &amp; mystère</title><link rel="alternate" href="https://www.youtube.com/watch?v=EQ3zCQe9Pm0"/><published>2026-11-22T08:00:58+00:00</published><media:group><media:description>Résumé</media:description><media:community><media:statistics views="132"/></media:community></media:group></entry>
+<entry><yt:videoId>ymhpyZH0KFE</yt:videoId><title>Short</title><link rel="alternate" href="https://www.youtube.com/shorts/ymhpyZH0KFE"/><published>2026-11-22T07:30:19+00:00</published></entry>
+</feed>`;
+    const items = parseYtFeed(xml, 'BFMTV');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: 'yt:EQ3zCQe9Pm0', provider: 'youtube', title: 'Affaire & mystère', channel: 'BFMTV', views: 132, desc: 'Résumé' });
+    expect(items[0].image).toBe('https://i.ytimg.com/vi/EQ3zCQe9Pm0/mqdefault.jpg');
+  });
+  it('picks channels by language and country', () => {
+    expect(ytChannels('fr', 'FR').news[0].name).toBe('BFMTV');
+    expect(ytChannels('en', 'GB').news[0].name).toBe('BBC News');
+    expect(ytChannels('en', 'US').news[0].name).toBe('CNN');
+    expect(ytChannels('en', 'AU').news[0].name).toBe('CNN');
+  });
+});

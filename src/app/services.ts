@@ -175,7 +175,29 @@ export async function maybeSync(force = false) {
   // it's local work only (no network wait), so no progress pill either
   const pre = isAndroidApp && s.settings.prefetch ? await CyberNative.prefetchStatus().catch(() => null) : null;
   const fresh = !!pre && !!p.lastSyncAt && pre.lastOkAt > p.lastSyncAt;
-  if (force || stale || fresh) await runSync(p.id, true, { quiet: fresh && !force });
+  if (force || stale || fresh) return runSync(p.id, true, { quiet: fresh && !force });
+  // the guide on its own every 6 h: providers' guides often cover less than a day
+  const epgAt = (await getMeta<number>(`epg:last:${p.id}`)) || 0;
+  if (Date.now() - epgAt > EPG_REFRESH_MS) await runEpgSync(p.id);
+}
+
+const EPG_REFRESH_MS = 6 * 3600000;
+
+/** guide only, in the background (no progress pill): screens refresh once it is written */
+export async function runEpgSync(profileId: string) {
+  const s = useApp.getState();
+  if (s.sync.running) return;
+  s.setSync({ running: true, quiet: true, progress: { step: 'epg' }, lastError: undefined });
+  try {
+    const secrets = await loadSecrets(profileId, true);
+    await dataWorker().syncEpg(profileId, secrets, proxyCb(() => {}));
+  } catch (e) {
+    console.warn('[epg]', e);
+  } finally {
+    const st = useApp.getState();
+    st.setSync({ running: false, quiet: false });
+    st.bumpEpg();
+  }
 }
 
 /** hands the URLs of a full sync to Android's WorkManager (runs while the app is closed) */

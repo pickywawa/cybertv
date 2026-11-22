@@ -10,6 +10,7 @@ export type Route =
   | { name: 'series'; id: string }
   | { name: 'channel'; id: string }
   | { name: 'replay'; id: string; item?: ReplayItem }
+  | { name: 'youtube'; id: string; title?: string }
   | { name: 'guide'; channelId?: string }
   | { name: 'grid'; kind: 'movie' | 'series'; title: string; filter: GridFilter }
   | { name: 'settings-section'; section: SettingsSection }

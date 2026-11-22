@@ -69,11 +69,13 @@ function replayAgeGate(item: ReplayItem, go: () => void) {
 }
 
 export function openReplay(item: ReplayItem) {
+  if (item.provider === 'youtube') return useApp.getState().push({ name: 'youtube', id: item.id.replace(/^yt:/, ''), title: item.title });
   replayAgeGate(item, () => useApp.getState().push({ name: 'replay', id: item.id, item }));
 }
 
 /** plays a replay video, from where it was left unless `startAt` is given */
 export async function playReplay(item: ReplayItem, startAt?: number) {
+  if (item.provider === 'youtube') return openReplay(item);
   const st = useApp.getState();
   const lang = st.profile?.lang || 'fr';
   replayAgeGate(item, async () => {

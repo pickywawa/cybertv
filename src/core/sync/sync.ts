@@ -378,15 +378,16 @@ async function syncM3u(src: Source, progress: Progress) {
 export async function epgUrlsForProfile(profileId: string, secrets: Record<string, string | undefined>): Promise<string[]> {
   const sources = (await db.sources.where('profileId').equals(profileId).toArray()).filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
   const urls: string[] = [];
+  // the free national guide first: a week of programmes for the main channels, where providers'
+  // guides often stop after a few hours (a guide only fills the channels earlier ones didn't cover)
+  const prof = await db.profiles.get(profileId);
+  const country = prof?.country || (prof?.lang === 'fr' ? 'FR' : undefined);
+  if (country && DEFAULT_EPG[country]) urls.push(DEFAULT_EPG[country]);
   for (const s of sources) {
     urls.push(...(s.epgUrls || []));
     if (s.type === 'xtream') urls.push(new XtreamClient({ server: s.url, username: s.username!, password: secrets[s.id] || '' }).xmltvUrl());
     else urls.push(...((await getMeta<string[]>(`epg:auto:${s.id}`)) || []));
   }
-  // free national guide as a last resort (only fills channels no other guide covers)
-  const prof = await db.profiles.get(profileId);
-  const country = prof?.country || (prof?.lang === 'fr' ? 'FR' : undefined);
-  if (country && DEFAULT_EPG[country]) urls.push(DEFAULT_EPG[country]);
   return [...new Set(urls.filter(Boolean))];
 }
 
@@ -604,6 +605,8 @@ export async function syncProfile(profileId: string, secrets: Record<string, str
     /* offline: next sync */
   }
   if (withEpg) await syncEpg(profileId, secrets, progress);
+  // channels were rewritten: versions without a guide id take their sibling's again
+  else await fillMissingEpgIds(profileId);
   await db.profiles.update(profileId, { lastSyncAt: Date.now() });
   await setMeta(`catalog:version:${profileId}`, Date.now());
   progress({ step: 'done' });

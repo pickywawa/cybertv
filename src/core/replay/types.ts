@@ -3,7 +3,7 @@
  * Ids carry the provider: `arte:117142-000-A` (video), `arte:RC-027966` (collection / series),
  * `ftv:<si_id>` (video), `ftvp:<program_path>` (show).
  */
-export type ReplayProvider = 'arte' | 'francetv';
+export type ReplayProvider = 'arte' | 'francetv' | 'youtube';
 
 export interface ReplayItem {
   id: string;
@@ -27,6 +27,9 @@ export interface ReplayItem {
   episode?: number;
   /** youth catalogue (Okoo): kept apart for the kids filter / a future kids mode */
   kids?: boolean;
+  /** YouTube: publication date (ms) and view count */
+  published?: number;
+  views?: number;
 }
 
 export interface ReplayRail {
@@ -44,6 +47,8 @@ export interface ReplayCatalog {
   /** youth catalogue (Okoo) */
   kids: ReplayRail[];
   kidsHero: ReplayItem[];
+  /** YouTube channels of broadcasters and media, by theme */
+  youtube?: ReplayRail[];
   /** providers that could not be read (network, geo-blocking) */
   failed: ReplayProvider[];
 }

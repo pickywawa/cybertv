@@ -199,7 +199,7 @@ final class Timeshift {
                     continue;
                 }
                 synchronized (this) {
-                    if (segs.size() >= 2 && !isReady) {
+                    if (segs.size() >= 1 && !isReady) {
                         isReady = true;
                         synchronized (ready) {
                             ready.notifyAll();
@@ -417,7 +417,8 @@ final class Timeshift {
                     r = get(url);
                 } catch (IOException e) {
                     String m = String.valueOf(e.getMessage());
-                    if (attempt >= 4 || !(m.contains("407") || m.contains("509") || m.contains("429") || m.contains("PROXY_AUTH"))) throw e;
+                    // up to ~15 s: one-connection subscriptions keep the previous stream "active" for a while after it stops
+                    if (attempt >= 10 || !(m.contains("407") || m.contains("509") || m.contains("429") || m.contains("PROXY_AUTH"))) throw e;
                     try {
                         Thread.sleep(1500);
                     } catch (InterruptedException ie) {
@@ -433,7 +434,6 @@ final class Timeshift {
                 s.tracks.put("v", new Track(s, "v", base));
                 s.master = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-STREAM-INF:BANDWIDTH=4000000\n/tsh/" + s.id + "/v.m3u8\n";
             }
-            for (Track t : s.tracks.values()) if (!t.awaitReady(20000)) throw new IOException("timeout");
         } catch (IOException e) {
             s.stop();
             throw e;
@@ -539,6 +539,16 @@ final class Timeshift {
             }
             try {
                 Session s = start(u, max);
+                // first segment of every track (outside the lock: other requests keep flowing)
+                for (Track t : s.tracks.values()) {
+                    if (!t.awaitReady(15000)) {
+                        synchronized (this) {
+                            s.stop();
+                            sessions.remove(s.id);
+                        }
+                        throw new IOException("timeout");
+                    }
+                }
                 byte[] b = s.master.getBytes(StandardCharsets.UTF_8);
                 h.put("Content-Type", "application/vnd.apple.mpegurl");
                 w.head(200, "OK", h, b.length);

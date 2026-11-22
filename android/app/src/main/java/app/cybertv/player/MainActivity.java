@@ -13,6 +13,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(CyberNativePlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().getDecorView().setBackgroundColor(Color.parseColor("#0b0b0d"));
+        // phones: portrait everywhere except in the player (which asks for landscape itself)
+        setRequestedOrientation(CyberNativePlugin.appOrientation(this));
     }
 
     /**

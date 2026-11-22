@@ -1,7 +1,7 @@
 import { db, getMeta, setMeta } from './db';
 import type { Channel, Episode, Favorite, Movie, Program, Series, Source, TmdbListItem, Universe, WatchState } from './types';
 import { listsKey, type TmdbLists } from './enrich/enrich';
-import { cleanName, movieGroupKey, seriesGroupKey, QUALITY_RANK } from './util/text';
+import { cleanName, movieGroupKey, seriesGroupKey, LIVE_QUALITY_RANK } from './util/text';
 import { secureGet, sourcePassKey } from './secure';
 import { sortByLang, type LangPrefs } from './util/lang';
 
@@ -79,7 +79,7 @@ export function pickRepresentatives(channels: Channel[], prio: Map<string, numbe
     }
     const pa = prio.get(c.sourceId)!;
     const pb = prio.get(cur.sourceId)!;
-    if (pa < pb || (pa === pb && (QUALITY_RANK[String(c.quality)] ?? 0) > (QUALITY_RANK[String(cur.quality)] ?? 0))) best.set(c.groupKey, c);
+    if (pa < pb || (pa === pb && (LIVE_QUALITY_RANK[String(c.quality)] ?? 0) > (LIVE_QUALITY_RANK[String(cur.quality)] ?? 0))) best.set(c.groupKey, c);
   }
   // names stored before the cleaner removed provider junk ("TF1 //")
   return [...best.values()].map((c) => (/[/\\|]\s*$/.test(c.name) ? { ...c, name: cleanName(c.name) } : c)).sort((a, b) => a.num - b.num);

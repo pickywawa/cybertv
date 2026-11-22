@@ -115,7 +115,7 @@ class Track {
       }
       wait = Math.min(15000, 1000 * 2 ** this.failures);
     }
-    if (this.segs.length >= 2) this.resolveReady();
+    if (this.segs.length >= 1) this.resolveReady();
     if (!this.stopped) this.timer = setTimeout(() => void this.poll(), wait);
   }
 
@@ -285,7 +285,8 @@ async function create(url: string, max: number): Promise<Session> {
     try {
       got = await fetchText(url);
     } catch (e) {
-      if (attempt >= 4 || !/40[7]|509|429/.test(String((e as Error).message))) throw e;
+      // up to ~15 s: one-connection subscriptions keep the previous stream "active" for a while after it stops
+      if (attempt >= 10 || !/40[7]|509|429/.test(String((e as Error).message))) throw e;
       await new Promise((r) => setTimeout(r, 1500));
     }
   }

@@ -503,8 +503,9 @@ textarea.input { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .mobile .stack-page .page-header, .mobile .settings .page-header { padding-top: calc(10px + var(--sat)); padding-left: 0; padding-right: 0; }
 .settings .page-header { padding-left: 0; padding-right: 0; }
 .stack-page .settings { padding-top: 0; }
-.logo-center { position: absolute; inset: 0; display: grid; place-items: center; padding: 14% 22%; background: radial-gradient(circle at 50% 40%, var(--surface-2), var(--surface)); }
-.logo-center img { width: 100%; height: 100%; object-fit: contain !important; }
+/* the logo fits a fixed box whatever its shape (square ".3", BFM TV, franceinfo used to overflow) */
+.logo-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 18% 24%; box-sizing: border-box; background: radial-gradient(circle at 50% 40%, var(--surface-2), var(--surface)); }
+.logo-center img { position: static !important; display: block; width: auto !important; height: auto !important; max-width: 100%; max-height: 100%; object-fit: contain !important; }
 .logo-center .ph { inset: 0; }
 .back-btn { top: calc(var(--nav-h) + 10px); left: calc(var(--gutter) - 10px); }
 .mobile .back-btn { top: calc(12px + var(--sat)); left: 12px; }
@@ -719,6 +720,7 @@ a.btn { text-decoration: none; }
 .rp-prov { display: inline-block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-right: 10px; vertical-align: 0.18em; background: var(--surface-2); color: var(--text); }
 .rp-prov.arte { background: #fa481c; color: #fff; }
 .rp-prov.francetv { background: #2c40f5; color: #fff; }
+.rp-prov.youtube { background: #ff0033; color: #fff; }
 .rp-prov.okoo { background: #ffcf26; color: #1a1a1a; }
 .hero .rp-prov, .detail-hero .rp-prov { margin-bottom: 10px; }
 .tab-replay .chips { margin-top: 4px; }
@@ -745,3 +747,13 @@ a.btn { text-decoration: none; }
 
 /* phones: content scrolling under the status bar is masked (time and icons stay readable) */
 .mobile .stack-page::before { content: ''; position: sticky; display: block; top: 0; height: var(--sat); margin-bottom: calc(-1 * var(--sat)); background: var(--bg); z-index: 39; }
+
+/* phones: tab content scrolling under the status bar is masked too */
+.mobile .page:not(.page-home)::before { content: ''; position: sticky; display: block; top: 0; height: var(--sat); margin-bottom: calc(-1 * var(--sat)); background: var(--bg); z-index: 39; }
+
+/* YouTube player page */
+.yt-page { position: fixed; inset: 0; z-index: 900; background: #000; display: flex; flex-direction: column; }
+.yt-frame { flex: 1; width: 100%; border: 0; background: #000; }
+.yt-bar { display: flex; align-items: center; gap: 12px; padding: 8px max(12px, var(--sal, 0px)) calc(8px + var(--sab)) 12px; background: #0b0b0d; color: #fff; }
+.yt-title { flex: 1; font-weight: 600; }
+.yt-close { color: #fff; }

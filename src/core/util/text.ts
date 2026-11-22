@@ -24,6 +24,8 @@ export function detectQuality(name: string): Quality {
 }
 
 export const QUALITY_RANK: Record<string, number> = { '4K': 5, HEVC: 4, FHD: 3, HD: 2, SD: 1, null: 2.5 };
+/** live channels: Full HD first; 4K / UHD / HDR feeds are heavy for phones and often unreliable at providers */
+export const LIVE_QUALITY_RANK: Record<string, number> = { FHD: 5, HD: 4, null: 3.5, '4K': 3, HEVC: 2, SD: 1 };
 
 /** Strip provider noise: country prefixes, quality tags, brackets, separators */
 export function cleanName(raw: string): string {

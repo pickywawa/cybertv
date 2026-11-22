@@ -13,3 +13,5 @@ android/capacitor-cordova-android-plugins
 release/
 dist-electron/
 build/
+# the desktop app icon lives in electron/build (electron-builder convention)
+!electron/build/

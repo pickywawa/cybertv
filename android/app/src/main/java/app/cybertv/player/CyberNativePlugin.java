@@ -371,9 +371,19 @@ public class CyberNativePlugin extends Plugin {
         a.runOnUiThread(() -> {
             if ("landscape".equals(mode)) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
             else if ("portrait".equals(mode)) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-            else a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+            else a.setRequestedOrientation(appOrientation(a));
             call.resolve();
         });
+    }
+
+    /**
+     * Orientation outside the player: portrait on phones (landscape only while watching),
+     * free on TVs and tablets.
+     */
+    static int appOrientation(Activity a) {
+        android.content.res.Configuration c = a.getResources().getConfiguration();
+        boolean tv = (c.uiMode & android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
+        return !tv && c.smallestScreenWidthDp < 600 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     }
 
     @PluginMethod

@@ -718,5 +718,9 @@ a.btn { text-decoration: none; }
 .rp-prov { display: inline-block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-right: 10px; vertical-align: 0.18em; background: var(--surface-2); color: var(--text); }
 .rp-prov.arte { background: #fa481c; color: #fff; }
 .rp-prov.francetv { background: #2c40f5; color: #fff; }
+.rp-prov.okoo { background: #ffcf26; color: #1a1a1a; }
 .hero .rp-prov, .detail-hero .rp-prov { margin-bottom: 10px; }
 .tab-replay .chips { margin-top: 4px; }
+
+.trakt-code { display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: 10px; background: var(--surface-2); margin: 6px 0 4px; }
+.trakt-code strong { font-size: 2rem; letter-spacing: 0.18em; font-family: ui-monospace, monospace; }

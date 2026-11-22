@@ -9,15 +9,16 @@ export interface Secrets {
 
 export type Engine = 'native' | 'web';
 
-function liveExt(src: Source, engine: Engine): string {
+function liveExt(src: Source, engine: Engine, preferHls: boolean): string {
   const f = src.account?.formats;
-  if (engine === 'web') return !f || f.includes('m3u8') ? 'm3u8' : 'ts';
+  if (engine === 'web' || preferHls) return !f || f.includes('m3u8') ? 'm3u8' : 'ts';
   return !f || f.includes('ts') ? 'ts' : 'm3u8';
 }
 
-export function liveUrl(ch: Channel, src: Source, pass: string | undefined, engine: Engine): string {
+/** `preferHls`: the local live buffer only records HLS, so ask Xtream for its m3u8 output */
+export function liveUrl(ch: Channel, src: Source, pass: string | undefined, engine: Engine, preferHls = false): string {
   if (src.type === 'm3u') return ch.url!;
-  return `${normalizeServer(src.url)}/live/${src.username}/${pass}/${ch.extId}.${liveExt(src, engine)}`;
+  return `${normalizeServer(src.url)}/live/${src.username}/${pass}/${ch.extId}.${liveExt(src, engine, preferHls)}`;
 }
 
 export function movieUrl(extId: string, ext: string, src: Source, pass?: string, direct?: string): string {

@@ -45,6 +45,8 @@ export interface GlobalSettings {
   prefetchWifiOnly: boolean;
   hideAdult: boolean;
   recentSearches: string[];
+  /** live timeshift kept on disk, in minutes (0 = off) */
+  liveBuffer: number;
 }
 
 const SETTINGS_KEY = 'cybertv.settings';
@@ -59,6 +61,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   prefetchWifiOnly: true,
   hideAdult: true,
   recentSearches: [],
+  liveBuffer: 30,
 };
 
 function loadSettings(): GlobalSettings {

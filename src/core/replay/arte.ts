@@ -47,7 +47,8 @@ function zoneRails(page: Json, label: string, max: number, seen: Set<string>): {
   const hero: ReplayItem[] = [];
   for (const z of page?.zones || []) {
     const data: Json[] = z?.content?.data || [];
-    const items = data.map(arteItem).filter((x): x is ReplayItem => !!x);
+    const ids = new Set<string>();
+    const items = data.map(arteItem).filter((x): x is ReplayItem => !!x && !ids.has(x.id) && !!ids.add(x.id));
     const tpl: string = z?.displayOptions?.template || '';
     if (/slider|single|event-/.test(tpl)) {
       hero.push(...items.filter((i) => i.image));

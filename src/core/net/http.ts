@@ -17,6 +17,23 @@ export function getProxyBase() {
   return proxyBase;
 }
 
+/**
+ * Live HLS through the local timeshift recorder (pause / rewind up to `maxSec`): the desktop app,
+ * the dev server and the Android proxy have one; null elsewhere (iOS, plain web).
+ */
+export function timeshiftUrl(url: string, maxSec: number): string | null {
+  let path = '';
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  if (!proxyBase || maxSec <= 0 || !/\.m3u8$/i.test(path)) return null;
+  const base = proxyBase.startsWith('http') ? proxyBase.replace(/\/proxy\?u=$/, '') : '';
+  if (!base) return null;
+  return `${base}/tsh/start/live.m3u8?max=${Math.round(maxSec)}&u=${encodeURIComponent(url)}`;
+}
+
 /** Hosts known to send CORS headers: never proxied */
 const CORS_OK = /^(https:\/\/(api\.themoviedb\.org|image\.tmdb\.org|iptv-org\.github\.io|raw\.githubusercontent\.com))/;
 

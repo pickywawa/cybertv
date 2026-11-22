@@ -2,6 +2,7 @@ import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { rewriteM3u8, isM3u8 } from '../src/core/net/m3u8Rewrite.ts';
+import { timeshiftHandle } from './timeshift.ts';
 
 /**
  * Dev-only CORS proxy: GET /proxy?u=<encoded absolute url>
@@ -20,6 +21,11 @@ export function devProxyPlugin(): Plugin {
   return {
     name: 'cybertv-dev-proxy',
     configureServer(server) {
+      // local timeshift buffer for live HLS (pause / rewind the live)
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/tsh/')) return next();
+        void timeshiftHandle(req, res, proxify);
+      });
       server.middlewares.use('/proxy', (req, res) => {
         void handle(req, res);
       });
@@ -80,11 +86,11 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-const RELAY_HEADERS = ['api-key', 'authorization', 'content-type', 'accept'];
+const RELAY_HEADERS = ['api-key', 'authorization', 'content-type', 'accept', 'trakt-api-key', 'trakt-api-version'];
 
 export async function relay(req: IncomingMessage, res: ServerResponse) {
   const target = new URL(req.url || '', 'http://x').searchParams.get('u');
-  if (!target || !/^https:\/\/([a-z0-9-]+\.)*opensubtitles\.(com|org)\//i.test(target)) {
+  if (!target || !/^https:\/\/(([a-z0-9-]+\.)*opensubtitles\.(com|org)|api\.trakt\.tv)\//i.test(target)) {
     res.statusCode = 400;
     return res.end('host not allowed');
   }

@@ -1,13 +1,14 @@
 import { getMeta, setMeta } from '../db';
 import type { Channel, PlayRequest } from '../types';
+import { withTimeshift } from '../playback';
 import { arteCatalog, arteInfo, arteShow, arteStream } from './arte';
-import { ftvCatalog, ftvInfo, ftvShow, ftvStream } from './francetv';
+import { ftvCatalog, ftvInfo, ftvKids, ftvShow, ftvStream } from './francetv';
 import type { ReplayCatalog, ReplayItem, ReplayProvider, ReplayRail, ReplayShow, ResolvedStream } from './types';
 
 export type { ReplayCatalog, ReplayItem, ReplayProvider, ReplayRail, ReplayShow } from './types';
 
 const TTL = 3 * 3600000;
-const metaKey = (lang: string) => `replay:catalog:${lang}`;
+const metaKey = (lang: string) => `replay:catalog:v2:${lang}`;
 
 /** alternate both catalogues so neither buries the other */
 function interleave(a: ReplayRail[], b: ReplayRail[]): ReplayRail[] {
@@ -20,7 +21,8 @@ function interleave(a: ReplayRail[], b: ReplayRail[]): ReplayRail[] {
 }
 
 async function fetchCatalog(lang: string): Promise<ReplayCatalog> {
-  const [arte, ftv] = await Promise.allSettled([arteCatalog(lang), ftvCatalog()]);
+  const [arte, ftv, kids] = await Promise.allSettled([arteCatalog(lang), ftvCatalog(), ftvKids()]);
+  const k = kids.status === 'fulfilled' ? kids.value : { rails: [], hero: [] };
   const failed: ReplayProvider[] = [];
   const a = arte.status === 'fulfilled' ? arte.value : (failed.push('arte'), { rails: [], hero: [] });
   const f = ftv.status === 'fulfilled' ? ftv.value : (failed.push('francetv'), { rails: [], hero: [] });
@@ -29,7 +31,7 @@ async function fetchCatalog(lang: string): Promise<ReplayCatalog> {
     if (a.hero[i]) hero.push(a.hero[i]);
     if (f.hero[i]) hero.push(f.hero[i]);
   }
-  return { at: Date.now(), hero: hero.slice(0, 6), rails: interleave(a.rails, f.rails), failed };
+  return { at: Date.now(), hero: hero.slice(0, 6), rails: interleave(a.rails, f.rails), kids: k.rails, kidsHero: k.hero, failed };
 }
 
 let inflight: Promise<ReplayCatalog> | null = null;
@@ -108,6 +110,11 @@ export const OFFICIAL_LIVE: OfficialLive[] = [
   { key: 'france4', name: 'France 4', ftv: '9a6a7670-dde9-4264-adbc-55b89558594b', keys: ['ch:france4'], iptv: ['france4.fr'] },
   { key: 'france5', name: 'France 5', ftv: '45007886-f3ff-4b3e-9706-1ef1014c5a60', keys: ['ch:france5'], iptv: ['france5.fr'] },
   { key: 'franceinfo', name: 'franceinfo', ftv: '35be22fb-1569-43ff-857c-99bf81defa2e', keys: ['ch:franceinfo', 'ch:franceinfotv', 'ch:franceinfo27'], iptv: ['franceinfo.fr', 'franceinfotv.fr'] },
+  // channel 13 of the TNT: LCP and Public Sénat share the same feed
+  {
+    key: 'lcp', name: 'LCP · Public Sénat', ftv: '733d60e7-914f-40ed-b296-0ddbc4b6d414',
+    keys: ['ch:lcp', 'ch:lcpan', 'ch:lcpassembleenationale', 'ch:publicsenat', 'ch:lcppublicsenat', 'ch:lcpps'], iptv: ['lcp.fr', 'lcpan.fr', 'publicsenat.fr'],
+  },
   { key: 'arte', name: 'Arte', arte: true, keys: ['ch:arte', 'ch:artefrance', 'ch:artefr'], iptv: ['arte.fr', 'artefrance.fr'] },
 ];
 
@@ -145,7 +152,7 @@ export async function officialPlayRequest(o: OfficialLive, lang: string): Promis
     kind: 'live',
     itemId: `official:${o.key}`,
     title: o.name,
-    candidates: [{ url: s.url, label: s.label, quality: 'FHD', sourceId: 'official' }],
+    candidates: [withTimeshift({ url: s.url, label: s.label, quality: 'FHD', sourceId: 'official' })],
     live: true,
   };
 }

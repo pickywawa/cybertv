@@ -15,7 +15,7 @@ import { IcInfo, IcPlay, IcRefresh, IcRestart } from '../icons';
 
 const MEM = new Map<string, ReplayCatalog>();
 const PROVIDER_LABEL: Record<ReplayProvider, string> = { arte: 'ARTE', francetv: 'france.tv' };
-type Filter = 'all' | ReplayProvider;
+type Filter = 'all' | ReplayProvider | 'kids';
 
 function lastDays(it: ReplayItem): number | null {
   if (!it.expires) return null;
@@ -59,20 +59,29 @@ export function Replay() {
   }, [lang, reload]);
 
   const cont = useAsync(async () => (await continueWatching(profile.id)).filter((w) => w.kind === 'replay'), [profile.id], { key: `replay:cont:${profile.id}` });
-  const rails = useMemo(() => (cat?.rails || []).filter((r) => filter === 'all' || r.provider === filter), [cat, filter]);
-  const hero = useMemo(() => (cat?.hero || []).filter((h) => filter === 'all' || h.provider === filter), [cat, filter]);
+  const rails = useMemo(() => {
+    if (!cat) return [];
+    if (filter === 'kids') return cat.kids || [];
+    const list = cat.rails.filter((r) => filter === 'all' || r.provider === filter);
+    // a taste of the youth catalogue in "All"
+    return filter === 'all' ? [...list.slice(0, 6), ...(cat.kids || []).slice(0, 1), ...list.slice(6)] : list;
+  }, [cat, filter]);
+  const hero = useMemo(
+    () => (filter === 'kids' ? cat?.kidsHero || [] : (cat?.hero || []).filter((h) => filter === 'all' || h.provider === filter)),
+    [cat, filter],
+  );
 
   return (
     <div className="tab-replay">
       {hero.length > 0 ? <ReplayHero items={hero} /> : <div className="hero-spacer" />}
       <div className="chips" data-row>
-        {(['all', 'arte', 'francetv'] as Filter[]).map((f) => (
+        {(['all', 'arte', 'francetv', 'kids'] as Filter[]).map((f) => (
           <button key={f} data-f className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
-            {f === 'all' ? t('replay.all') : PROVIDER_LABEL[f]}
+            {f === 'all' ? t('replay.all') : f === 'kids' ? t('replay.kids') : PROVIDER_LABEL[f]}
           </button>
         ))}
       </div>
-      {filter !== 'arte' && <LiveRail />}
+      {(filter === 'all' || filter === 'francetv') && <LiveRail />}
       {!!cont?.length && (
         <Rail title={t('home.continue')}>
           {cont.map((w: WatchState) => (
@@ -89,11 +98,11 @@ export function Replay() {
           </button>
         </div>
       )}
-      {cat?.failed.map((p) => (filter === 'all' || filter === p) && (
+      {cat?.failed.map((p) => (filter === 'all' || filter === p || (filter === 'kids' && p === 'francetv')) && (
         <p key={p} className="container muted small">{t('replay.providerDown', { name: PROVIDER_LABEL[p] })}</p>
       ))}
       {rails.map((r) => (
-        <Rail key={r.id} title={<><span className={`rp-prov ${r.provider}`}>{PROVIDER_LABEL[r.provider]}</span>{r.title}</>}>
+        <Rail key={r.id} title={<><span className={`rp-prov ${r.kids ? 'okoo' : r.provider}`}>{r.kids ? 'Okoo' : PROVIDER_LABEL[r.provider]}</span>{r.title}</>}>
           {r.items.map((it) => (
             <LandCard key={it.id} {...cardProps(it)} onClick={() => openReplay(it)} />
           ))}

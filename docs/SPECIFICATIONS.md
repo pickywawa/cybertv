@@ -478,6 +478,22 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
   - TF1+, M6+ et Canal+ ne sont pas intégrables (compte obligatoire et DRM) ;
   - ces API ne sont pas documentées publiquement et peuvent changer.
 
+### Plus de replay, Trakt et pause du direct (V1.7)
+- Replay : nouvelles pages LCP et Public Sénat (france.tv) et catalogue jeunesse Okoo (`apps/categories/enfants`), avec un filtre « Jeunesse (Okoo) ». Les éléments sont marqués `kids` pour un futur mode enfant. Le direct officiel LCP-Public Sénat (canal 13) s'ajoute aux chaînes prioritaires.
+- TV5MONDE+ n'est pas intégré : le service n'est pas proposé en France (réponse 403).
+- Dailymotion n'est pas utilisé pour LCP et Public Sénat : leurs vidéos y sont réservées au lecteur de leur site.
+- Trakt :
+  - mise en place : l'utilisateur crée son application gratuite, saisit son Client ID et son Client Secret dans Paramètres › Services (stockage sécurisé), puis relie son compte avec un code sur trakt.tv/activate (device flow, utilisable sur TV) ;
+  - accueil : rails « Pour vous » (recommandations films et séries), « Ma watchlist Trakt » et listes personnelles (6 au plus), limités aux titres présents dans les sources (correspondance TMDB) et gardés 1 h ;
+  - lecteur : scrobble start/pause/stop des films et épisodes ; Trakt marque le titre vu au-delà de 80 %.
+- Pause et retour arrière sur le direct (tampon local) :
+  - un enregistreur dans le proxy local (`Timeshift.java` sur Android, `dev-server/timeshift.ts` pour l'ordinateur et le développement) suit les playlists HLS du direct : meilleure variante jusqu'en 1080p et piste audio par défaut ;
+  - il télécharge chaque segment sur disque (clés AES-128 comprises) et sert une playlist locale qui couvre toute la fenêtre (30 ou 60 min, réglable, désactivable) ;
+  - les segments sont repérés par leur numéro de séquence, ce qui gère les URL changeantes des flux avec publicité et les remises à zéro ;
+  - une session est réutilisée pour la même URL ; deux au plus ; arrêt après 2 min sans requête ; place disque libre surveillée sur Android ;
+  - le lecteur s'en sert pour la pause, -10/+10 s, la barre de temps et le bouton « Direct ». La distance naturelle du lecteur au direct est mesurée pour l'indicateur « Différé de… ». Le catch-up du fournisseur prend le relais au-delà de la fenêtre ;
+  - Xtream : avec le tampon actif, la sortie m3u8 est demandée. Non disponible sur iOS ni pour les flux MPEG-TS seuls.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

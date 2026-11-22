@@ -1,7 +1,7 @@
 {
   "name": "cybertv",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -50,7 +50,7 @@
   },
   "cyber": {
     "updateUrl": "https://github.com/pickywawa/cybertv/releases/latest/download/update.json",
-    "minNativeCode": 8
+    "minNativeCode": 9
   },
   "main": "dist-electron/main.cjs",
   "description": "Lecteur IPTV pour vos propres sources (Android, Android TV, iOS, ordinateur)",

@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { handle as proxyHandle, relay } from '../dev-server/proxy';
+import { timeshiftHandle } from '../dev-server/timeshift';
 import { enrollDevPlugin } from '../dev-server/enroll';
 
 const MIME: Record<string, string> = {
@@ -30,6 +31,9 @@ function startServer(root: string): Promise<number> {
 
   const server = createServer((req, res) => {
     const url = req.url || '/';
+    if (url.startsWith('/tsh/')) {
+      return void timeshiftHandle(req, res, (u) => `/proxy?u=${encodeURIComponent(u)}`);
+    }
     if (url.startsWith('/proxy')) {
       req.url = url.slice('/proxy'.length) || '/';
       return void proxyHandle(req, res);

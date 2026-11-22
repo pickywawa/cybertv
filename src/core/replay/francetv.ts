@@ -16,6 +16,8 @@ export const FTV_CHANNELS: { path: string; label: string }[] = [
   { path: 'france-3', label: 'France 3' },
   { path: 'france-5', label: 'France 5' },
   { path: 'france-4', label: 'France 4' },
+  { path: 'lcp', label: 'LCP' },
+  { path: 'public-senat', label: 'Public Sénat' },
 ];
 
 function picture(images: Json[] | undefined, types = ['vignette_16x9', 'background_16x9', 'carre']): string | undefined {
@@ -69,7 +71,10 @@ export function ftvItem(x: Json): ReplayItem | null {
   };
 }
 
-const items = (list: Json[] | undefined) => (list || []).map(ftvItem).filter((x): x is ReplayItem => !!x);
+const items = (list: Json[] | undefined) => {
+  const seen = new Set<string>();
+  return (list || []).map(ftvItem).filter((x): x is ReplayItem => !!x && !seen.has(x.id) && !!seen.add(x.id));
+};
 
 export async function ftvCatalog(): Promise<{ rails: ReplayRail[]; hero: ReplayItem[] }> {
   const pages = await Promise.all(FTV_CHANNELS.map((c) => fetchJson<Json>(`${YATTA}/apps/channels/${c.path}?platform=apps`, 20000).catch(() => null)));
@@ -81,7 +86,7 @@ export async function ftvCatalog(): Promise<{ rails: ReplayRail[]; hero: ReplayI
     const ch = FTV_CHANNELS[i];
     for (const c of page.collections || []) {
       if (c?.type === 'live') continue;
-      const list = items(c.items);
+      const list = items(c.items).map((x) => (x.channel ? x : { ...x, channel: ch.label }));
       if (c?.type === 'mise_en_avant') {
         hero.push(...list.filter((x) => x.image).slice(0, 2));
         continue;
@@ -91,6 +96,23 @@ export async function ftvCatalog(): Promise<{ rails: ReplayRail[]; hero: ReplayI
     }
   });
   return { rails, hero };
+}
+
+/** Okoo, france.tv's youth catalogue (3-5, 6-8, 9-12 years…) */
+export async function ftvKids(): Promise<{ rails: ReplayRail[]; hero: ReplayItem[] }> {
+  const page = await fetchJson<Json>(`${YATTA}/apps/categories/enfants?platform=apps`, 25000);
+  const rails: ReplayRail[] = [];
+  const hero: ReplayItem[] = [];
+  for (const c of page?.collections || []) {
+    const list = items(c.items).map((x) => ({ ...x, kids: true, channel: x.channel || 'Okoo' }));
+    if (c?.type === 'mise_en_avant') {
+      hero.push(...list.filter((x) => x.image).slice(0, 4));
+      continue;
+    }
+    if (list.length < 4) continue;
+    rails.push({ id: `okoo:${c.id ?? c.label}`, provider: 'francetv', kids: true, title: `Okoo · ${String(c.label || '').trim()}`, items: list });
+  }
+  return { rails: rails.slice(0, 16), hero };
 }
 
 export async function ftvShow(path: string): Promise<ReplayShow> {

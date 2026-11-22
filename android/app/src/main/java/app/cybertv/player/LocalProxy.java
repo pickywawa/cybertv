@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *  - GET /proxy?u=<url>  CORS proxy for provider APIs / playlists / EPG (streams the body, forwards Range,
  *                        rewrites HLS playlists so segments also go through the proxy)
  *  - GET /img?u=<url>    image proxy with an LRU disk cache (provider logos rarely send cache headers)
+ *  - GET /tsh/...        local timeshift buffer for live HLS (see Timeshift)
  * Mirrors dev-server/proxy.ts used in the browser.
  */
 public class LocalProxy {
@@ -51,10 +52,12 @@ public class LocalProxy {
     private int port;
 
     private final File prefetchDir;
+    private final Timeshift timeshift;
 
     public LocalProxy(File cacheDir) {
         this.prefetchDir = new File(cacheDir, "prefetch");
         this.imgDir = new File(cacheDir, "img");
+        this.timeshift = new Timeshift(cacheDir);
         //noinspection ResultOfMethodCallIgnored
         imgDir.mkdirs();
     }
@@ -120,6 +123,11 @@ public class LocalProxy {
             }
             String path = target.contains("?") ? target.substring(0, target.indexOf('?')) : target;
             Map<String, String> q = parseQuery(target.contains("?") ? target.substring(target.indexOf('?') + 1) : "");
+            if (path.startsWith("/tsh/")) {
+                // local live buffer (pause / rewind the live)
+                timeshift.handle(out, path, q, (code, msg, h, len) -> writeHead(out, code, msg, h, len));
+                return;
+            }
             String u = q.get("u");
             if (u == null || !(u.startsWith("http://") || u.startsWith("https://"))) {
                 writeText(out, 400, "Bad Request", "missing u");

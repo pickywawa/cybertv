@@ -15,8 +15,11 @@ import { openMovie, openSeries, playMovie, prioritizeEnrichment, resume } from '
 import { resizeTmdb } from '@/core/enrich/tmdb';
 import { langPrefs } from '@/core/prefs';
 import { langScore, sortByLang } from '@/core/util/lang';
+import { traktLists } from '@/core/trakt';
+import type { TmdbListItem } from '@/core/types';
 
 type HeroItem = { kind: 'movie' | 'series'; item: Movie | Series };
+type MixItem = HeroItem;
 
 export const homeKey = (profileId: string, prefsKey: string, hideAdult: boolean) => `home:${profileId}:${prefsKey}:${hideAdult}`;
 export const homePrefsKey = (p: { lang: string; audioLangs?: string[]; subLangs?: string[] }) => `${p.lang}|${p.audioLangs?.join()}|${p.subLangs?.join()}`;
@@ -74,7 +77,26 @@ export function Home() {
     const kids = sample.filter((m) => m.universe === 'kids' || (m.genres || []).some((g) => /anim|famil/i.test(g))).slice(0, 30);
     const favMovies = (await db.movies.bulkGet(favs.filter((f) => f.kind === 'movie').map((f) => f.itemId))).filter(Boolean) as Movie[];
     const favSeries = (await db.series.bulkGet(favs.filter((f) => f.kind === 'series').map((f) => f.itemId))).filter(Boolean) as Series[];
+    // Trakt: recommendations, watchlist and personal lists, only what the sources carry
+    const tr = await traktLists(profile.id).catch(() => null);
+    const mixed = async (movies: TmdbListItem[], shows: TmdbListItem[]) => {
+      const [m, sr] = await Promise.all([matchMovies(profile.id, movies), matchSeries(profile.id, shows)]);
+      const out: MixItem[] = [];
+      for (let i = 0; i < Math.max(m.length, sr.length); i++) {
+        if (m[i]) out.push({ kind: 'movie', item: m[i] });
+        if (sr[i]) out.push({ kind: 'series', item: sr[i] });
+      }
+      return out;
+    };
+    const trakt = tr
+      ? {
+          forYou: await mixed(tr.forYouMovies, tr.forYouShows),
+          watchlist: await mixed(tr.watchlistMovies, tr.watchlistShows),
+          lists: await Promise.all(tr.lists.map(async (l) => ({ name: l.name, items: await mixed(l.movies, l.shows) }))),
+        }
+      : null;
     return {
+      trakt,
       cont, fresh, newSeries, top: top.slice(0, 10), nowPlaying, popularMovies, mustSee, trendingTv, popularTv, genres, kids, favMovies, favSeries,
       hasVod: sample.length > 0 || newSeries.length > 0,
     };
@@ -158,6 +180,8 @@ export function Home() {
         </div>
       )}
 
+      {data.trakt && <MixRail title={t('trakt.forYou')} items={data.trakt.forYou} />}
+
       <MovieRail title={t('home.fresh')} items={data.fresh} onAll={() => push({ name: 'grid', kind: 'movie', title: t('home.fresh'), filter: { sort: 'added' } })} />
 
       {data.top.length >= 3 && (
@@ -178,12 +202,33 @@ export function Home() {
           {data.favSeries.map((s) => <PosterCard imdb={s.imdbRating} key={s.id} title={s.title} image={s.poster} onClick={() => open('series', s.id)} />)}
         </Rail>
       )}
+      {data.trakt && <MixRail title={t('trakt.watchlist')} items={data.trakt.watchlist} />}
+      {data.trakt?.lists.map((l) => <MixRail key={l.name} title={l.name} items={l.items} />)}
       <MovieRail title={t('home.kids')} items={data.kids} onAll={() => push({ name: 'grid', kind: 'movie', title: t('home.kids'), filter: { universe: 'kids' } })} />
       <MovieRail title={t('home.popularMovies')} items={data.popularMovies} />
       {data.genres.map(([g, list]) => (
         <MovieRail key={g} title={g} items={list.slice(0, 30)} onAll={() => push({ name: 'grid', kind: 'movie', title: g, filter: { genre: g } })} />
       ))}
     </div>
+  );
+}
+
+function MixRail({ title, items }: { title: string; items: MixItem[] }) {
+  if (items.length < 2) return null;
+  return (
+    <Rail title={title}>
+      {items.slice(0, 40).map(({ kind, item: x }) => (
+        <PosterCard
+          imdb={x.imdbRating}
+          key={x.id}
+          title={x.title}
+          sub={[x.year, x.genres?.[0]].filter(Boolean).join(' · ')}
+          image={x.poster}
+          fallback={resizeTmdb(x.backdrop, 'w780')}
+          onClick={() => (kind === 'movie' ? openMovie(x.id) : openSeries(x.id))}
+        />
+      ))}
+    </Rail>
   );
 }
 

@@ -22,6 +22,7 @@ import { langPrefs, subMode } from '@/core/prefs';
 import { toLang } from '@/core/util/lang';
 import { focusEl, focusFirst, setKeyInterceptor } from '../spatial';
 import { Img } from '../components/Img';
+import { useTraktScrobble } from '../hooks/useTraktScrobble';
 import { Menu } from '../components/Overlay';
 import {
   IcAudio, IcBack10, IcClose, IcFwd10, IcHistory, IcInfo, IcPause, IcPip, IcPlay, IcRestart, IcSettings, IcSubtitles, IcTv,
@@ -32,6 +33,9 @@ type Mode = 'live' | 'shift' | 'vod';
 type Panel = null | 'channels' | 'programs' | 'settings' | 'info';
 
 const HIDE_MS = 4500;
+/** distance to the live edge still shown as "live" (players stay a few segments behind) */
+const LIVE_SLACK = 8;
+const isDvr = (mode: string, s: EngineState) => mode === 'live' && s.seekableEnd - s.seekableStart > 60;
 const STALL_MS = 14000;
 
 export function Player({ req }: { req: PlayRequest }) {
@@ -68,6 +72,8 @@ export function Player({ req }: { req: PlayRequest }) {
   const lastPos = useRef(0);
   const pausedAt = useRef<number | null>(null);
   const prevChannel = useRef<string | null>(null);
+  /** distance the player keeps from the live edge (seconds) */
+  const edgeLag = useRef<number | null>(null);
   const stRef = useRef(st);
   stRef.current = st;
 
@@ -108,6 +114,7 @@ export function Player({ req }: { req: PlayRequest }) {
     const eng = engineRef.current;
     const c = cands[candIdx];
     if (!eng || !c) return;
+    edgeLag.current = null;
     lastPos.current = -1;
     void eng.load(c.url, { startAt: candIdx === 0 ? req.startAt : undefined, live: mode === 'live' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,7 +240,13 @@ export function Player({ req }: { req: PlayRequest }) {
 
   // ───────── timeline ─────────
   const catchupOk = !!channel && canCatchup(channel);
-  const playhead = mode === 'live' ? now : mode === 'shift' ? shiftStart + st.position * 1000 : 0;
+  // live with a seekable window (local buffer or provider DVR): pause / rewind inside it
+  const dvr = isDvr(mode, st);
+  // players keep some distance from the edge: the smallest one seen while playing is "live"
+  if (st.isLive && st.status === 'playing' && st.seekableEnd > 0) edgeLag.current = Math.min(edgeLag.current ?? Infinity, Math.max(0, st.seekableEnd - st.position));
+  const lag = edgeLag.current ?? 0;
+  const behind = dvr ? Math.max(0, st.seekableEnd - lag - st.position) : 0;
+  const playhead = mode === 'live' ? now - (behind > LIVE_SLACK ? behind * 1000 : 0) : mode === 'shift' ? shiftStart + st.position * 1000 : 0;
   const progAtHead = useMemo(
     () => (mode === 'vod' ? undefined : chanProgs.find((p) => p.start <= playhead && p.stop > playhead) || (mode === 'live' ? prog.now : undefined)),
     [chanProgs, playhead, mode, prog.now],
@@ -312,7 +325,7 @@ export function Player({ req }: { req: PlayRequest }) {
       e.pause();
       if (mode === 'live') pausedAt.current = Date.now();
     } else {
-      if (mode === 'live' && pausedAt.current && Date.now() - pausedAt.current > 20000 && catchupOk) {
+      if (mode === 'live' && pausedAt.current && Date.now() - pausedAt.current > 20000 && catchupOk && !isDvr(mode, stRef.current)) {
         const at = pausedAt.current;
         pausedAt.current = null;
         void goShift(at);
@@ -339,7 +352,14 @@ export function Player({ req }: { req: PlayRequest }) {
         else void goShift(target);
         return;
       }
-      // live: DVR window first, then catch-up
+      // live: the local buffer / DVR window first, then catch-up
+      if (isDvr(mode, s)) {
+        const to = s.position + delta;
+        const edge = s.seekableEnd - (edgeLag.current ?? 0);
+        if (to < s.seekableStart && catchupOk) return void goShift(Date.now() - (edge - to) * 1000);
+        e.seek(Math.min(edge, Math.max(s.seekableStart, to)));
+        return;
+      }
       if (delta < 0 && catchupOk) {
         void goShift(Date.now() + delta * 1000);
         return;
@@ -360,10 +380,18 @@ export function Player({ req }: { req: PlayRequest }) {
         return;
       }
       const target = winStart + r * (winEnd - winStart);
+      if (isDvr(mode, s)) {
+        const back = (Date.now() - target) / 1000;
+        if (back <= s.seekableEnd - s.seekableStart || !catchupOk) {
+          const edge = s.seekableEnd - (edgeLag.current ?? 0);
+          e.seek(Math.min(edge, Math.max(s.seekableStart, edge - back)));
+          return;
+        }
+      }
       if (mode === 'shift' && target >= shiftStart && (target - shiftStart) / 1000 <= Math.max(s.duration, s.buffered)) e.seek((target - shiftStart) / 1000);
       else void goShift(target);
     },
-    [mode, winStart, winEnd, shiftStart, goShift, req.durationSec],
+    [mode, winStart, winEnd, shiftStart, goShift, req.durationSec, catchupOk],
   );
 
   const startOver = useCallback(() => {
@@ -590,6 +618,7 @@ export function Player({ req }: { req: PlayRequest }) {
   let leftLabel = '';
   let rightLabel = '';
   const vodDur = vodDuration(st, req.durationSec);
+  useTraktScrobble(req, st, profile.id, vodDur);
   if (mode === 'vod') {
     ratio = vodDur ? Math.min(1, st.position / vodDur) : 0;
     bufRatio = vodDur ? Math.min(1, st.buffered / vodDur) : 0;
@@ -601,7 +630,7 @@ export function Player({ req }: { req: PlayRequest }) {
     leftLabel = fmtTime(winStart);
     rightLabel = fmtTime(winEnd);
   }
-  const atLive = mode === 'live';
+  const atLive = mode === 'live' && behind <= LIVE_SLACK;
   const title = mode === 'vod' ? req.title : progAtHead?.title || req.title;
   const liveScore = mode !== 'vod' ? matchEvent(progAtHead, scores) : undefined;
   const subtitle = mode === 'vod' ? req.subtitle : [channel?.name, progAtHead?.subTitle].filter(Boolean).join(' · ') || req.subtitle;
@@ -663,11 +692,11 @@ export function Player({ req }: { req: PlayRequest }) {
             <button className="pbtn big" data-f data-play onClick={togglePlay} aria-label="play/pause">
               {playing ? <IcPause /> : <IcPlay />}
             </button>
-            <button className="pbtn" data-f onClick={() => seekBy(10)} aria-label="+10s" disabled={mode === 'live'}>
+            <button className="pbtn" data-f onClick={() => seekBy(10)} aria-label="+10s" disabled={mode === 'live' && atLive}>
               <IcFwd10 />
             </button>
             {mode !== 'vod' && (
-              <button className={`live-badge ${atLive ? '' : 'off'}`} data-f onClick={() => !atLive && void goLive()} title={t('player.goLive')}>
+              <button className={`live-badge ${atLive ? '' : 'off'}`} data-f onClick={() => !atLive && (mode === 'live' && dvr ? eng()?.seek(st.seekableEnd - lag) : void goLive())} title={t('player.goLive')}>
                 {t('player.live')}
               </button>
             )}
@@ -706,11 +735,12 @@ export function Player({ req }: { req: PlayRequest }) {
             onStep={(d) => seekBy(d)}
             onActivity={poke}
             label={(r) => (mode === 'vod' ? (vodDur ? fmtDuration(r * vodDur) : '') : fmtTime(winStart + r * (winEnd - winStart)))}
-            disabled={(mode === 'live' && !catchupOk) || (mode === 'vod' && !vodDur)}
+            disabled={(mode === 'live' && !catchupOk && !dvr) || (mode === 'vod' && !vodDur)}
           />
           <div className="times">
             <span>{leftLabel}</span>
             {mode === 'shift' && <span>{t('player.delayed')} · {fmtTime(playhead)}</span>}
+            {mode === 'live' && !atLive && <span>{t('player.behind', { t: fmtDuration(behind) })}</span>}
             <span>{rightLabel}</span>
           </div>
         </div>

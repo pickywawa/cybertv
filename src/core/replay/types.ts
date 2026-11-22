@@ -25,6 +25,8 @@ export interface ReplayItem {
   age?: number;
   season?: number;
   episode?: number;
+  /** youth catalogue (Okoo): kept apart for the kids filter / a future kids mode */
+  kids?: boolean;
 }
 
 export interface ReplayRail {
@@ -32,12 +34,16 @@ export interface ReplayRail {
   provider: ReplayProvider;
   title: string;
   items: ReplayItem[];
+  kids?: boolean;
 }
 
 export interface ReplayCatalog {
   at: number;
   hero: ReplayItem[];
   rails: ReplayRail[];
+  /** youth catalogue (Okoo) */
+  kids: ReplayRail[];
+  kidsHero: ReplayItem[];
   /** providers that could not be read (network, geo-blocking) */
   failed: ReplayProvider[];
 }

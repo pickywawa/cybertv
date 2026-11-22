@@ -9,7 +9,8 @@ import { langPrefs } from './prefs';
 import { useApp } from '@/state/store';
 import { serversOf, serverLabel } from './sources/servers';
 import { normalizeServer } from './sources/xtream';
-import { isAndroidApp } from './platform';
+import { isAndroidApp, isIOSApp } from './platform';
+import { timeshiftUrl } from './net/http';
 import { t } from './i18n';
 import { officialFor, resolveOfficialLive, withTimeout } from './replay';
 
@@ -104,7 +105,7 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
   for (const v of variants) {
     const src = byId.get(v.sourceId);
     if (!src) continue;
-    const url = catchup ? catchupUrl(v, src, secrets[src.id], catchup.start, Math.min(catchup.stop, Date.now())) : liveUrl(v, src, secrets[src.id], engineKind());
+    const url = catchup ? catchupUrl(v, src, secrets[src.id], catchup.start, Math.min(catchup.stop, Date.now())) : liveUrl(v, src, secrets[src.id], engineKind(), bufferSec() > 0);
     if (url) candidates.push({ url, label: label(v), quality: v.quality, sourceId: v.sourceId });
   }
   const uniq = withBackupServers(finalizeCandidates(candidates, false, () => ''), byId);
@@ -113,6 +114,7 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
   const official = !catchup ? await officialCandidate(ch) : null;
   if (official) candidates.push(official);
   candidates.push(...uniq);
+  if (!catchup) candidates.splice(0, candidates.length, ...candidates.map(withTimeshift));
   return {
     kind: 'live',
     itemId: ch.id,
@@ -125,6 +127,18 @@ export async function playChannelRequest(ch: Channel, program?: Program, fromSta
     live: !catchup,
     catchup,
   };
+}
+
+/** live buffer length chosen in the settings (seconds); none on iOS (no local recorder) */
+export function bufferSec(): number {
+  if (isIOSApp) return 0;
+  return (useApp.getState().settings.liveBuffer ?? 30) * 60;
+}
+
+/** live HLS goes through the local recorder: pause and rewind without provider catch-up */
+export function withTimeshift<C extends { url: string }>(c: C): C {
+  const u = timeshiftUrl(c.url, bufferSec());
+  return u ? { ...c, url: u } : c;
 }
 
 async function officialCandidate(ch: Channel): Promise<PlayRequest['candidates'][number] | null> {

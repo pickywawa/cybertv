@@ -6,6 +6,7 @@ import type { Category, Profile, ThemeId } from '@/core/types';
 import { moveSource, removeSource, setTmdbToken, updateProfile } from '@/core/profiles';
 import { secureGet, secureRemove, secureSet, tmdbKey, osKey, osPassKey, osUserKey } from '@/core/secure';
 import { hasOsKey, validateOs } from '@/core/subs/opensubtitles';
+import { traktPollLink, traktSaveApp, traktStartLink, traktStatus, traktUnlink, traktLists, type DeviceCode } from '@/core/trakt';
 import { dataWorker, proxyCb } from '@/core/workers';
 import { loadSecrets } from '@/core/repo';
 import { useApp, applyTheme, type SettingsSection } from '@/state/store';
@@ -14,7 +15,7 @@ import { APP_VERSION } from '@/core/updater';
 import { serverLabel } from '@/core/sources/servers';
 import { canEnroll } from '@/core/enroll';
 import { setSmoothScroll } from '../spatial';
-import { isAndroidApp, isDesktop, isTvMode } from '@/core/platform';
+import { isAndroidApp, isDesktop, isIOSApp, isTvMode } from '@/core/platform';
 import { CyberNative } from '@/core/native';
 import { Toggle } from '../components/Overlay';
 import { PageHeader } from '../components/BackButton';
@@ -63,6 +64,7 @@ export function SettingsSectionView({ section }: { section: SettingsSection }) {
           <>
             <ServicesSection />
             <OpenSubtitlesBox />
+            <TraktBox />
           </>
         )}
         {section === 'appearance' && <AppearanceSection />}
@@ -187,6 +189,106 @@ function OpenSubtitlesBox() {
   );
 }
 
+/** Trakt: the user's own API app (Client ID + Secret), then the account linked with a code */
+function TraktBox() {
+  const profile = useApp((s) => s.profile)!;
+  const toast = useApp((s) => s.toast);
+  const [st, setSt] = useState<{ hasApp: boolean; linked: boolean; user?: string } | null>(null);
+  const [id, setId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [code, setCode] = useState<DeviceCode | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const refresh = () => void traktStatus(profile.id).then(setSt);
+  useEffect(refresh, [profile.id]);
+
+  // poll until the code is entered on trakt.tv/activate
+  useEffect(() => {
+    if (!code) return;
+    let off = false;
+    let wait = code.interval * 1000;
+    const until = Date.now() + code.expires_in * 1000;
+    const tick = async () => {
+      if (off) return;
+      if (Date.now() > until) return setCode(null), setErr(t('trakt.expired'));
+      const r = await traktPollLink(profile.id, code.device_code);
+      if (off) return;
+      if (r === 'ok') {
+        setCode(null);
+        toast(t('trakt.linked'));
+        await traktLists(profile.id, true);
+        useApp.getState().bumpCatalog();
+        return refresh();
+      }
+      if (r === 'denied' || r === 'expired' || r === 'app') return setCode(null), setErr(t(r === 'app' ? 'trakt.badApp' : 'trakt.expired'));
+      if (r === 'slow') wait += 1000;
+      timer = window.setTimeout(() => void tick(), wait);
+    };
+    let timer = window.setTimeout(() => void tick(), wait);
+    return () => {
+      off = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
+
+  const link = async () => {
+    setErr(null);
+    try {
+      if (id.trim() && secret.trim()) await traktSaveApp(profile.id, id, secret);
+      setCode(await traktStartLink(profile.id));
+      setId('');
+      setSecret('');
+      refresh();
+    } catch (e) {
+      setErr(String((e as Error).message) === 'app' ? t('trakt.badApp') : t('trakt.network'));
+    }
+  };
+  return (
+    <div className="form" style={{ marginTop: 28 }}>
+      <h2>Trakt</h2>
+      <p className="muted" style={{ lineHeight: 1.5 }}>{t('trakt.text')}</p>
+      <div className={`status ${st?.linked ? 'ok' : ''}`}>{st?.linked ? t('trakt.on', { user: st.user || 'Trakt' }) : t('trakt.off')}</div>
+      {!st?.linked && !code && (
+        <>
+          <div className="field">
+            <label>Client ID</label>
+            <input className="input" data-f value={id} onChange={(e) => setId(e.target.value)} placeholder={st?.hasApp ? '••••••••••••' : ''} autoComplete="off" autoCapitalize="off" />
+          </div>
+          <div className="field">
+            <label>Client Secret</label>
+            <input className="input" data-f type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={st?.hasApp ? '••••••••••••' : ''} autoComplete="off" />
+            <span className="small dim">{t('trakt.help')}</span>
+          </div>
+        </>
+      )}
+      {code && (
+        <div className="trakt-code">
+          <div>{t('trakt.goTo', { url: code.verification_url })}</div>
+          <strong>{code.user_code}</strong>
+          <span className="small dim">{t('trakt.waiting')}</span>
+        </div>
+      )}
+      <div className="btn-row">
+        {!st?.linked && !code && (
+          <button className="btn primary" data-f disabled={!st?.hasApp && !(id.trim() && secret.trim())} onClick={() => void link()}>{t('trakt.link')}</button>
+        )}
+        {code && <button className="btn" data-f onClick={() => setCode(null)}>{t('common.cancel')}</button>}
+        {st?.linked && (
+          <button className="btn" data-f onClick={() => void traktLists(profile.id, true).then(() => (useApp.getState().bumpCatalog(), toast(t('trakt.refreshed'))))}>
+            <IcRefresh /> {t('trakt.refresh')}
+          </button>
+        )}
+        {(st?.linked || st?.hasApp) && (
+          <button className="btn danger" data-f onClick={() => void traktUnlink(profile.id, !st?.linked).then(() => (useApp.getState().bumpCatalog(), refresh()))}>
+            {st?.linked ? t('trakt.unlink') : t('settings.tmdbRemove')}
+          </button>
+        )}
+        {err && <span className="msg-ko">{err}</span>}
+      </div>
+    </div>
+  );
+}
+
 function ServicesSection() {
   const profile = useApp((s) => s.profile)!;
   const [token, setToken] = useState('');
@@ -290,6 +392,19 @@ function PlayerSection() {
         <IcChevronRight className="chev" />
       </button>
       <Toggle label={t('settings.autoTrailer')} on={settings.autoTrailer} onChange={(v) => update({ autoTrailer: v })} />
+      {!isIOSApp && (
+        <div className="field">
+          <label>{t('settings.liveBuffer')}</label>
+          <div className="seg" data-row style={{ flexWrap: 'wrap' }}>
+            {[0, 30, 60].map((m) => (
+              <button key={m} data-f className={(settings.liveBuffer ?? 30) === m ? 'on' : ''} onClick={() => update({ liveBuffer: m })}>
+                {m ? t('settings.liveBufferMin', { n: m }) : t('settings.liveBufferOff')}
+              </button>
+            ))}
+          </div>
+          <span className="small dim">{t('settings.liveBufferHelp')}</span>
+        </div>
+      )}
       <div className="field">
         <label>{t('settings.tonightStart')}</label>
         <input className="input" data-f type="time" value={`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`} onChange={(e) => {

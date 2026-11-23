@@ -793,3 +793,10 @@ a.btn { text-decoration: none; }
 .tvi-success svg { width: 56px; height: 56px; color: var(--accent, #2ee59d); }
 .tvi-success h2 { margin: 10px 0 6px; }
 .tvi-success p { color: var(--text-2); }
+
+.tvi-code { font-size: 1.6rem; letter-spacing: 0.3em; font-family: ui-monospace, monospace; max-width: 220px; }
+
+/* TV list: small icon, the name may wrap (it used to be cut by an oversized icon) */
+.tvi .list-item { align-items: center; gap: 14px; }
+.tvi .list-item > svg { width: 28px; height: 28px; flex: none; color: var(--text-2); }
+.tvi .list-item .grow { min-width: 0; white-space: normal; overflow-wrap: anywhere; }

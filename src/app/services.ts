@@ -7,13 +7,13 @@ import { CyberNative } from '@/core/native';
 import { dataWorker, proxyCb, reinitWorkers, searchWorker } from '@/core/workers';
 import { loadSecrets } from '@/core/repo';
 import { secureGet, tmdbKey } from '@/core/secure';
-import { setLang } from '@/core/i18n';
+import { setLang, t } from '@/core/i18n';
 import { applyTheme, useApp } from '@/state/store';
 import { installSpatialNav, setBackHandler, setSmoothScroll } from '@/ui/spatial';
 import type { Profile, SyncProgress } from '@/core/types';
 import { primeCache } from '@/ui/hooks';
 import { checkForUpdate, installSilentNow, reportBootOk } from '@/core/updater';
-import { enrollTarget } from '@/core/enroll';
+import { enrollTarget, importAsProfile, parseImportLink, type EnrollPayload } from '@/core/enroll';
 
 let periodic: number | null = null;
 let lastEnrichBump = 0;
@@ -96,6 +96,9 @@ let pendingLink: string | null = null;
 
 /** routes a deep link once a profile is active (the profile's sources are what gets sent) */
 export function openDeepLink(url: string) {
+  // settings sent by a phone that just installed the app on this TV
+  const imported = parseImportLink(url);
+  if (imported) return void applyImportLink(imported);
   const target = enrollTarget(url);
   if (!target) return;
   const st = useApp.getState();
@@ -105,6 +108,25 @@ export function openDeepLink(url: string) {
   }
   st.setTab('home');
   st.push({ name: 'send-to-tv', target });
+}
+
+let importing = false;
+/** the phone's profile and sources: created (or completed) and opened, then synced */
+async function applyImportLink(p: EnrollPayload) {
+  if (importing) return;
+  importing = true;
+  try {
+    // boot first (database, profiles list)
+    for (let i = 0; i < 100 && !useApp.getState().booted && useApp.getState().screen === 'boot'; i++) await new Promise((r) => setTimeout(r, 100));
+    const prof = await importAsProfile(p);
+    await selectProfile(prof);
+    useApp.getState().toast(t('enroll.fromPhoneDone', { name: prof.name }));
+    void runSync(prof.id);
+  } catch (e) {
+    console.warn('[import]', e);
+  } finally {
+    importing = false;
+  }
 }
 
 export async function selectProfile(p: Profile) {

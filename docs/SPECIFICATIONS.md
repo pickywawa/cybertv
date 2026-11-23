@@ -571,6 +571,25 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
   - le téléphone doit avoir Android 8 ou plus ;
   - pas encore testé sur une vraie TV.
 
+### TV avec code d'association, réglages transmis (V1.13)
+- **Débogage sans fil (Android 11+)** :
+  - **Détection** : annonces mDNS `_adb-tls-connect._tcp` (port de connexion) et `_adb-tls-pairing._tcp` (port d'association, tant que la TV affiche son code).
+  - **Connexion** : la TV répond STLS au CNXN, le client passe en TLS 1.3 avec un certificat auto-signé de sa clé RSA (`AdbTls`). Une TV qui ne connaît pas le téléphone refuse le certificat, et l'assistant demande alors le code.
+  - **Association** (`AdbPairing`, d'après AOSP `pairing_connection`) :
+    - TLS 1.3 avec certificats des deux côtés ;
+    - export de 64 octets de la session TLS (`SSLSockets.exportKeyingMaterial`, libellé « adb-label\0 », Android 12+) ajouté au code ;
+    - SPAKE2 Ed25519 (`Spake2`, portage de BoringSSL : points M/N vérifiés, ajout de multiples de l'ordre pour que le scalaire du code soit un multiple de 8) ;
+    - échange des PeerInfo (8192 octets, clé publique adb) chiffrés en AES-128-GCM, clé dérivée par HKDF-SHA256 « adb pairing_auth aes-128-gcm key », nonce = compteur ;
+    - en-têtes de 6 octets.
+  - **Validé** sur un émulateur Android 14 en débogage sans fil : avec le code affiché, association en 170 ms, puis le téléphone apparaît dans les appareils associés de la TV.
+- **Réglages transmis** : après l'installation, le téléphone lance l'app sur la TV par adb (`am start -d cyberiptv://import/<charge base64url>`).
+  - La charge contient le profil (nom, emoji, couleur), les sources actives avec identifiants, la clé TMDB et les préférences. Elle est placée dans le chemin de l'URI, qu'Android ne journalise pas.
+  - La TV crée ou complète le profil du même nom, sans dupliquer les sources, l'ouvre et synchronise.
+  - Option activée par défaut dans l'assistant. Validé entre deux émulateurs : la TV s'ouvre sur le bon profil, catalogue chargé.
+- **Import depuis le téléphone par QR code** : proposé dès l'étape « profil » de la première configuration, et le profil est maintenant importé avec les sources et les préférences.
+- **Assistant** : liste des TV lisible (petite icône, nom sur plusieurs lignes), bouton « Terminer » à la fin.
+- **Client ADB** : les messages tardifs d'un flux précédent sont ignorés à l'ouverture d'un nouveau.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

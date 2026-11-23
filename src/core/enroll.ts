@@ -5,7 +5,7 @@ import { db } from './db';
 import type { Profile, Source } from './types';
 import { loadSecrets } from './repo';
 import { secureGet, tmdbKey } from './secure';
-import { saveSource, setTmdbToken, updateProfile, type SourceInput } from './profiles';
+import { createProfile, saveSource, setTmdbToken, updateProfile, type SourceInput } from './profiles';
 
 /**
  * QR-code enrolment.
@@ -29,6 +29,8 @@ export interface EnrollPayload {
   sources: EnrollSource[];
   tmdb?: string;
   prefs?: Pick<Profile, 'lang' | 'country' | 'audioLangs' | 'subLangs' | 'subMode' | 'subsOnline'>;
+  /** the phone's profile itself (name, emoji, colour), so the TV gets the same one */
+  profile?: Pick<Profile, 'name' | 'emoji' | 'color'>;
 }
 
 const isUrl = (u: unknown): u is string => {
@@ -87,13 +89,53 @@ export function parsePayload(raw: string): EnrollPayload | null {
         subsOnline: typeof p.subsOnline === 'boolean' ? p.subsOnline : undefined,
       }
     : undefined;
+  const pr = j.profile || {};
+  const name = str(pr.name, 24);
+  const profile = name
+    ? { name, emoji: str(pr.emoji, 8) || '🍿', color: typeof pr.color === 'string' && /^#[0-9a-f]{6}$/i.test(pr.color) ? pr.color : '#e50914' }
+    : undefined;
   return {
     v: 1,
     from: j.from === 'app' ? 'app' : 'form',
     sources,
     tmdb: str(j.tmdb, 512) || undefined,
     prefs: prefs as EnrollPayload['prefs'],
+    profile,
   };
+}
+
+// ─────────── settings handed to a TV right after "Install on a TV" ───────────
+
+const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = (s: string) => decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+
+/** the link the phone opens on the TV through adb (the payload travels in the path, never logged) */
+export function importLink(p: EnrollPayload): string {
+  return `cyberiptv://import/${b64url(JSON.stringify(p))}`;
+}
+
+export function parseImportLink(url: string): EnrollPayload | null {
+  const m = url.match(/^cyberiptv:\/\/import\/([A-Za-z0-9_-]+)$/);
+  if (!m) return null;
+  try {
+    return parsePayload(unb64url(m[1]));
+  } catch {
+    return null;
+  }
+}
+
+/** the TV takes the phone's profile: the same one when it exists (same name), a new one otherwise */
+export async function importAsProfile(p: EnrollPayload): Promise<Profile> {
+  const name = p.profile?.name || 'CyberIPTV';
+  const existing = (await db.profiles.toArray()).find((x) => x.name.toLowerCase() === name.toLowerCase());
+  const prof =
+    existing ||
+    (await createProfile({ name, emoji: p.profile?.emoji || '🍿', color: p.profile?.color || '#e50914', lang: p.prefs?.lang || 'fr' }));
+  // sources already on this profile (same address and user) are not added twice
+  const have = await db.sources.where('profileId').equals(prof.id).toArray();
+  const fresh = { ...p, sources: p.sources.filter((s) => !have.some((h) => h.url === s.url && (h.username || '') === (s.username || ''))) };
+  await applyEnroll(prof.id, fresh, { prefs: true });
+  return (await db.profiles.get(prof.id))!;
 }
 
 export function toSourceInput(s: EnrollSource): SourceInput {
@@ -170,6 +212,7 @@ export async function buildPhonePayload(profile: Profile, sourceIds: string[], w
     prefs: withPrefs
       ? { lang: profile.lang, country: profile.country, audioLangs: profile.audioLangs, subLangs: profile.subLangs, subMode: profile.subMode, subsOnline: profile.subsOnline }
       : undefined,
+    profile: withPrefs ? { name: profile.name, emoji: profile.emoji, color: profile.color } : undefined,
   };
 }
 

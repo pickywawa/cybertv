@@ -368,6 +368,8 @@ public class CyberNativePlugin extends Plugin {
                 o.put("ip", t.ip);
                 o.put("name", t.name);
                 o.put("adb", t.adb);
+                if (t.tlsPort > 0) o.put("tlsPort", t.tlsPort);
+                if (t.pairPort > 0) o.put("pairPort", t.pairPort);
                 list.put(o);
             }
             JSObject r = new JSObject();
@@ -392,7 +394,7 @@ public class CyberNativePlugin extends Plugin {
         }
         new Thread(() -> {
             try {
-                String model = TvInstaller.install(getContext(), ip, port, url, (step, pct, detail) -> {
+                String model = TvInstaller.install(getContext(), ip, port, url, call.getString("launch"), (step, pct, detail) -> {
                     JSObject ev = new JSObject();
                     ev.put("step", step);
                     ev.put("pct", pct);
@@ -406,6 +408,32 @@ public class CyberNativePlugin extends Plugin {
                 call.reject(String.valueOf(e.getMessage()));
             }
         }, "cyber-tv-install").start();
+    }
+
+    @PluginMethod
+    public void tvPair(PluginCall call) {
+        String ip = call.getString("ip");
+        String code = call.getString("code");
+        int port = call.getInt("port", 0);
+        if (ip == null || code == null) {
+            call.reject("missing ip or code");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                int p = port > 0 ? port : TvInstaller.pairingPort(getContext(), ip);
+                if (p <= 0) {
+                    call.reject("no pairing port");
+                    return;
+                }
+                TvInstaller.pair(getContext(), ip, p, code);
+                call.resolve();
+            } catch (AdbPairing.WrongCode e) {
+                call.reject("wrong code");
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }, "cyber-tv-pair").start();
     }
 
     /** the remote's voice / search key, sent by MainActivity */

@@ -49,8 +49,15 @@ final class TvInstaller {
     static final class Tv {
         String ip;
         String name;
+        /** classic network debugging (port 5555) */
         boolean adb;
+        /** wireless debugging (Android 11+): TLS port, and the pairing port while its code is shown */
+        int tlsPort;
+        int pairPort;
     }
+
+    /** IP → port of an adb mDNS service (wireless debugging) */
+    private static final String TLS_CONNECT = "_adb-tls-connect._tcp", TLS_PAIRING = "_adb-tls-pairing._tcp";
 
     private TvInstaller() {}
 
@@ -58,7 +65,9 @@ final class TvInstaller {
 
     static List<Tv> scan(Context c) {
         String own = ownIp();
-        Map<String, String> names = discoverNames(c, 2500);
+        Map<String, Integer> tls = new ConcurrentHashMap<>();
+        Map<String, Integer> pairing = new ConcurrentHashMap<>();
+        Map<String, String> names = discover(c, 2500, tls, pairing);
         Map<String, Tv> out = new LinkedHashMap<>();
         if (own != null) {
             String prefix = own.substring(0, own.lastIndexOf('.') + 1);
@@ -89,6 +98,22 @@ final class TvInstaller {
                 t.name = names.get(ip);
                 out.put(ip, t);
             }
+        }
+        // wireless debugging (no port 5555): reachable on their announced TLS port
+        for (Map.Entry<String, Integer> e : tls.entrySet()) {
+            if (e.getKey().equals(own)) continue;
+            Tv t = out.get(e.getKey());
+            if (t == null) {
+                t = new Tv();
+                t.ip = e.getKey();
+                t.name = names.get(e.getKey());
+                out.put(e.getKey(), t);
+            }
+            t.tlsPort = e.getValue();
+        }
+        for (Map.Entry<String, Integer> e : pairing.entrySet()) {
+            Tv t = out.get(e.getKey());
+            if (t != null) t.pairPort = e.getValue();
         }
         // TVs announced on the network but not reachable for debugging yet (shown with a hint)
         for (Map.Entry<String, String> e : names.entrySet()) {
@@ -123,14 +148,25 @@ final class TvInstaller {
         }
     }
 
-    /** IP → friendly name, from the Google Cast ("Salon TV") and Android TV Remote announcements */
+    /** the pairing port announced by a TV while it shows its code ("Pair device with pairing code") */
+    static int pairingPort(Context c, String ip) {
+        Map<String, Integer> pairing = new ConcurrentHashMap<>();
+        discover(c, 3000, new ConcurrentHashMap<>(), pairing);
+        Integer p = pairing.get(ip);
+        return p == null ? 0 : p;
+    }
+
+    /**
+     * IP → friendly name, from the Google Cast ("Salon TV") and Android TV Remote announcements,
+     * plus the wireless debugging ports (connect / pairing) announced by adb.
+     */
     @SuppressWarnings("deprecation")
-    private static Map<String, String> discoverNames(Context c, long ms) {
+    private static Map<String, String> discover(Context c, long ms, Map<String, Integer> tls, Map<String, Integer> pairing) {
         Map<String, String> names = new ConcurrentHashMap<>();
         NsdManager nsd = (NsdManager) c.getSystemService(Context.NSD_SERVICE);
         if (nsd == null) return names;
         List<NsdManager.DiscoveryListener> listeners = new ArrayList<>();
-        for (String type : new String[]{"_googlecast._tcp", "_androidtvremote2._tcp"}) {
+        for (String type : new String[]{"_googlecast._tcp", "_androidtvremote2._tcp", TLS_CONNECT, TLS_PAIRING}) {
             NsdManager.DiscoveryListener l = new NsdManager.DiscoveryListener() {
                 @Override
                 public void onServiceFound(NsdServiceInfo info) {
@@ -144,6 +180,15 @@ final class TvInstaller {
                             public void onServiceResolved(NsdServiceInfo i) {
                                 InetAddress h = i.getHost();
                                 if (!(h instanceof Inet4Address)) return;
+                                String st = i.getServiceType() == null ? "" : i.getServiceType();
+                                if (st.contains("adb-tls-connect")) {
+                                    tls.put(h.getHostAddress(), i.getPort());
+                                    return;
+                                }
+                                if (st.contains("adb-tls-pairing")) {
+                                    pairing.put(h.getHostAddress(), i.getPort());
+                                    return;
+                                }
                                 String name = i.getServiceName();
                                 byte[] fn = i.getAttributes() != null ? i.getAttributes().get("fn") : null;
                                 if (fn != null) name = new String(fn, StandardCharsets.UTF_8);
@@ -198,7 +243,7 @@ final class TvInstaller {
     // ───────────────────────── install ─────────────────────────
 
     /** downloads the APK, connects to the TV (it may ask for approval) and installs; returns the TV model */
-    static String install(Context c, String ip, int port, String url, Progress p) throws Exception {
+    static String install(Context c, String ip, int port, String url, String launchUri, Progress p) throws Exception {
         File apk = new File(c.getCacheDir(), "tv-install.apk");
         p.step("download", 0, null);
         download(url, apk, p);
@@ -235,11 +280,24 @@ final class TvInstaller {
                 }
             });
             if (!res.contains("Success")) throw new IOException(res.isEmpty() ? "install failed" : res);
+            // start the app on the TV, with this phone's profile and sources when asked for
+            p.step("launch", 0, model);
+            String start = "am start -n app.cybertv.player/.MainActivity";
+            if (launchUri != null && launchUri.matches("cyberiptv://import/[A-Za-z0-9_-]+")) start += " -a android.intent.action.VIEW -d " + launchUri;
+            String out = adb.exec(start);
+            if (out.contains("Error")) Log.w(TAG, "launch: " + out);
             return model;
         } finally {
             //noinspection ResultOfMethodCallIgnored
             apk.delete();
         }
+    }
+
+    /** pairing with the 6-digit code shown by the TV (wireless debugging, Android 12+ phone) */
+    static void pair(Context c, String ip, int port, String code) throws Exception {
+        if (Build.VERSION.SDK_INT < 31) throw new IOException("pairing unsupported");
+        String me = "cyberiptv@" + (Build.MODEL == null ? "phone" : Build.MODEL.replace(' ', '_'));
+        AdbPairing.pair(ip, port, code, key(c), me, (s, label, len) -> android.net.ssl.SSLSockets.exportKeyingMaterial(s, label, null, len));
     }
 
     /** this phone's ADB key, created once (the TV remembers it when "Always allow" is ticked) */

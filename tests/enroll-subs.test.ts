@@ -62,3 +62,23 @@ describe('QR enrolment', () => {
     expect(enrollTarget(`cyberiptv://enroll?target=${encodeURIComponent('http://192.168.1.20/e/short')}`)).toBeNull();
   });
 });
+
+import { importLink, parseImportLink } from '../src/core/enroll';
+describe('settings sent to a TV after install', () => {
+  it('round-trips profile, sources and preferences through the link', () => {
+    const p = {
+      v: 1 as const, from: 'app' as const,
+      sources: [{ type: 'xtream' as const, label: 'Mon fournisseur', url: 'http://line.example.xyz', backups: ['http://vpn.example.xyz'], username: 'u', password: 'p@ss é', epgUrls: [] }],
+      tmdb: 'eyJ.tok', prefs: { lang: 'fr' as const, country: 'FR', audioLangs: ['fr'], subLangs: ['fr'], subMode: 'auto' as const, subsOnline: true },
+      profile: { name: 'Picky', emoji: '🍿', color: '#e11d48' },
+    };
+    const link = importLink(p);
+    expect(link).toMatch(/^cyberiptv:\/\/import\/[A-Za-z0-9_-]+$/);
+    const back = parseImportLink(link)!;
+    expect(back.profile).toEqual(p.profile);
+    expect(back.sources[0]).toMatchObject({ url: 'http://line.example.xyz', username: 'u', password: 'p@ss é' });
+    expect(back.prefs?.country).toBe('FR');
+    expect(parseImportLink('cyberiptv://import/!!')).toBeNull();
+    expect(parseImportLink('https://evil.example/import/abc')).toBeNull();
+  });
+});

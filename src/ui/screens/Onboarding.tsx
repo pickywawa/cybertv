@@ -45,13 +45,20 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
       })),
     ]);
     if (p.tmdb) setToken(p.tmdb);
+    // the phone's profile (name, emoji, colour) when it sent it
+    if (p.profile) {
+      setName((n) => n.trim() || p.profile!.name);
+      setEmoji(p.profile.emoji);
+      setColor(p.profile.color);
+    }
     if (withPrefs && p.prefs) {
       setPhonePrefs(p.prefs);
       if (p.prefs.lang) changeLang(p.prefs.lang);
     }
     setDraft(emptyDraft());
     setQr(false);
-    setStep(2);
+    // a name is still needed when the phone (web form) didn't send a profile
+    setStep(p.profile || name.trim() ? 2 : 0);
   };
 
   const changeLang = (l: Lang) => {
@@ -108,12 +115,20 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
           {[0, 1, 2, 3].map((i) => <i key={i} className={i <= step ? 'on' : ''} />)}
         </div>
 
-        {step === 0 && (
+        {step === 0 && qr && <EnrollPanel onImport={fromPhone} onCancel={() => setQr(false)} />}
+
+        {step === 0 && !qr && (
           <div className="form">
+            {/* TV: the phone is the easiest way to set everything up (profile, sources, preferences) */}
+            {canEnroll && (
+              <button className={`btn ${isTvMode() ? 'primary' : ''} qr-cta`} data-f data-autofocus={isTvMode() || undefined} onClick={() => setQr(true)}>
+                📱 {t('enroll.importAll')}
+              </button>
+            )}
             <h2>{t('onboard.step.profile')}</h2>
             <div className="field">
               <label>{t('profiles.name')}</label>
-              <input className="input" data-f data-autofocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex" maxLength={24} />
+              <input className="input" data-f data-autofocus={!isTvMode() || undefined} value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex" maxLength={24} />
             </div>
             <div className="emoji-grid" data-row>
               {EMOJIS.map((e) => (

@@ -32,6 +32,7 @@ import javax.crypto.Cipher;
  * Protocol: https://android.googlesource.com/platform/packages/modules/adb/+/HEAD/protocol.txt
  */
 final class AdbClient implements AutoCloseable {
+    private static final int A_STLS = 0x534c5453, A_STLS_VERSION = 0x01000000;
     private static final int A_CNXN = 0x4e584e43, A_AUTH = 0x48545541, A_OPEN = 0x4e45504f, A_OKAY = 0x59414b4f, A_CLSE = 0x45534c43, A_WRTE = 0x45545257;
     private static final int A_VERSION = 0x01000001;
     private static final int MAX_PAYLOAD = 256 * 1024;
@@ -46,9 +47,13 @@ final class AdbClient implements AutoCloseable {
         void uploaded(long sent, long total);
     }
 
-    private final Socket sock;
-    private final DataInputStream in;
-    private final OutputStream out;
+    private Socket sock;
+    private DataInputStream in;
+    private OutputStream out;
+    /** set for a "wireless debugging" connection: upgraded to TLS when the TV asks for it */
+    private KeyPair tlsKey;
+    private String host;
+    private int port;
     private int maxData = 4096;
     private String banner = "";
 
@@ -83,12 +88,39 @@ final class AdbClient implements AutoCloseable {
         s.connect(new InetSocketAddress(host, port), 5000);
         s.setSoTimeout(15000);
         AdbClient c = new AdbClient(s);
+        c.tlsKey = key;
+        c.host = host;
+        c.port = port;
         try {
             c.handshake(key, name, approvalMs, l);
             return c;
         } catch (Exception e) {
             c.close();
             throw e;
+        }
+    }
+
+    private void upgradeToTls() throws IOException {
+        try {
+            javax.net.ssl.SSLSocket ssl = (javax.net.ssl.SSLSocket) AdbTls.context(tlsKey).getSocketFactory().createSocket(sock, host, port, true);
+            ssl.setUseClientMode(true);
+            ssl.setEnabledProtocols(new String[]{"TLSv1.3"});
+            ssl.startHandshake();
+            sock = ssl;
+            in = new DataInputStream(ssl.getInputStream());
+            out = ssl.getOutputStream();
+        } catch (IOException e) {
+            // the TV does not know this phone: it must be paired first (code)
+            throw new NotPaired();
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
+    }
+
+    /** wireless debugging refused this phone's certificate: pairing with a code is needed */
+    static final class NotPaired extends IOException {
+        NotPaired() {
+            super("not paired");
         }
     }
 
@@ -105,6 +137,12 @@ final class AdbClient implements AutoCloseable {
                 maxData = Math.max(4096, Math.min(m.arg1, MAX_PAYLOAD));
                 banner = new String(m.data, StandardCharsets.UTF_8);
                 return;
+            }
+            if (m.cmd == A_STLS) {
+                // wireless debugging: TLS with this phone's certificate (known to the TV since pairing)
+                send(A_STLS, A_STLS_VERSION, 0, new byte[0]);
+                upgradeToTls();
+                continue;
             }
             if (m.cmd != A_AUTH || m.arg0 != AUTH_TOKEN) throw new IOException("unexpected " + Integer.toHexString(m.cmd));
             if (!signed) {
@@ -143,12 +181,42 @@ final class AdbClient implements AutoCloseable {
         return out1.trim();
     }
 
+    /** runs a shell command on the device and returns its output */
+    String exec(String cmd) throws IOException {
+        int local = ++streams;
+        send(A_OPEN, local, 0, ("exec:" + cmd + "\0").getBytes(StandardCharsets.UTF_8));
+        // messages of an earlier stream (late CLSE / OKAY of the install) are skipped
+        Msg ok;
+        do {
+            ok = read();
+            if (ok.cmd == A_CLSE && ok.arg1 == local) throw new IOException("exec refused");
+        } while (!(ok.cmd == A_OKAY && ok.arg1 == local));
+        int remote = ok.arg0;
+        ByteArrayOutputStream out1 = new ByteArrayOutputStream();
+        while (true) {
+            Msg m = read();
+            if (m.arg1 != local) continue;
+            if (m.cmd == A_WRTE) {
+                out1.write(m.data);
+                send(A_OKAY, local, remote, new byte[0]);
+            } else if (m.cmd == A_CLSE) {
+                send(A_CLSE, local, remote, new byte[0]);
+                break;
+            }
+        }
+        return out1.toString("UTF-8");
+    }
+
+    private int streams = 0;
+
     private String installWith(String service, File apk, Listener l) throws IOException {
-        int local = 1;
+        int local = ++streams;
         send(A_OPEN, local, 0, (service + "\0").getBytes(StandardCharsets.UTF_8));
-        Msg ok = read();
-        if (ok.cmd == A_CLSE) throw new IOException("service refused");
-        if (ok.cmd != A_OKAY) throw new IOException("unexpected " + Integer.toHexString(ok.cmd));
+        Msg ok;
+        do {
+            ok = read();
+            if (ok.cmd == A_CLSE && ok.arg1 == local) throw new IOException("service refused");
+        } while (!(ok.cmd == A_OKAY && ok.arg1 == local));
         int remote = ok.arg0;
         long total = apk.length(), sent = 0;
         ByteArrayOutputStream answer = new ByteArrayOutputStream();

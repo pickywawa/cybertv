@@ -31,10 +31,14 @@ export interface NativeTrack {
 export interface TvDevice {
   ip: string;
   name?: string;
+  /** classic network debugging (port 5555) */
   adb: boolean;
+  /** wireless debugging (Android 11+): TLS port, and pairing port while the TV shows its code */
+  tlsPort?: number;
+  pairPort?: number;
 }
 export interface TvInstallEvent {
-  step: 'download' | 'connect' | 'approve' | 'upload' | 'install';
+  step: 'download' | 'connect' | 'approve' | 'upload' | 'install' | 'launch';
   pct: number;
   model?: string;
 }
@@ -79,7 +83,10 @@ export interface CyberNativePlugin {
   addListener(event: 'tvInstall', cb: (e: TvInstallEvent) => void): Promise<PluginListenerHandle>;
   /** install on a TV: TVs of the network (adb = network debugging reachable) */
   tvScan(): Promise<{ devices: TvDevice[]; ownIp?: string }>;
-  tvInstall(o: { ip: string; port?: number; url: string }): Promise<{ model?: string }>;
+  /** launch: cyberiptv://import/<payload> opened on the TV right after the install */
+  tvInstall(o: { ip: string; port?: number; url: string; launch?: string }): Promise<{ model?: string }>;
+  /** pairing with the TV's 6-digit code (port: found on the network when omitted) */
+  tvPair(o: { ip: string; code: string; port?: number }): Promise<void>;
 }
 
 export const CyberNative = registerPlugin<CyberNativePlugin>('CyberNative');

@@ -148,15 +148,15 @@ export function LiveTv() {
 
   return (
     <div className="tab-tv">
-      <div className="tv-head">
-        <div className="tabs" data-row data-tabs>
+      <div className="tv-head" data-row data-tabs>
+        <div className="tabs">
           {(['now', 'tonight'] as const).map((m) => (
             <button key={m} data-f className={`tab ${mode === m ? 'active' : ''}`} onClick={() => setMode(m)}>
               {m === 'now' ? t('tv.now') : t('tv.tonight')}
             </button>
           ))}
         </div>
-        <button className="btn-guide" data-f onClick={() => (setGuideList(zapList), push({ name: 'guide' }))}>
+        <button className="btn-guide" data-f data-noauto onClick={() => (setGuideList(zapList), push({ name: 'guide' }))}>
           <IcCalendar /> {!narrow && t('tv.guide')}
         </button>
       </div>

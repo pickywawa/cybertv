@@ -130,9 +130,14 @@ html.native-video .app-shell { visibility: hidden; }
 [data-tabs] [data-f]:focus-visible::after,
 .kbd [data-tabs] [data-f]:focus::after { display: none; }
 .kbd .navlink.active { background: var(--surface-2); color: var(--text); }
-.tabs[data-tabs] .tab { padding: 6px 14px; border-radius: 6px; }
-.kbd .tabs[data-tabs] .tab.active { background: var(--surface-2); }
-.kbd .tabs[data-tabs] .tab.active::after { display: none; }
+[data-tabs] .tabs .tab, .tabs[data-tabs] .tab { padding: 6px 14px; border-radius: 6px; }
+.kbd [data-tabs] .tab.active { background: var(--surface-2); }
+.kbd [data-tabs] .tab.active::after { display: none; }
+/* the current tab focused again: accent like the others (not the grey "current" fill) */
+.kbd [data-tabs] [data-f].active:focus, [data-tabs] [data-f].active:focus-visible { background: var(--accent); color: var(--accent-text); }
+/* white buttons: the white ring barely shows on them, so they fill with the accent */
+.btn.primary:focus-visible, .kbd .btn.primary:focus,
+.season-btn.active:focus-visible, .kbd .season-btn.active:focus { background: var(--accent); color: var(--accent-text); box-shadow: none; filter: none; }
 /* player bar: buttons become a filled accent circle, the seek bar only shows its cursor */
 .player .ui [data-f]:focus-visible,
 .kbd .player .ui [data-f]:focus { box-shadow: none; }
@@ -235,7 +240,7 @@ h1, h2, h3 { margin: 0; font-family: var(--font-display); }
 .rail-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 var(--gutter); margin-bottom: 10px; }
 .rail-head a, .rail-head button { color: var(--text); text-decoration: underline; font-weight: 600; font-size: 0.95rem; padding: 4px 6px; border-radius: 6px; }
 .rail-track {
-  display: flex; gap: var(--gap); overflow-x: auto; overflow-y: visible; padding: 10px var(--gutter) 14px;
+  display: flex; gap: var(--gap); overflow-x: auto; overflow-y: visible; padding: 20px var(--gutter) 22px; margin: -10px 0 -8px;
   scroll-padding: 0 var(--gutter); scrollbar-width: none; scroll-behavior: smooth;
 }
 .perf .rail-track { scroll-behavior: auto; }

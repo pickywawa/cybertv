@@ -696,6 +696,14 @@ export function Player({ req }: { req: PlayRequest }) {
     rightLabel = fmtTime(winEnd);
   }
   const atLive = mode === 'live' && behind <= LIVE_SLACK;
+  // seek buttons only when they can do something (rewinding live needs a buffer or catch-up)
+  const canBack = mode !== 'live' || catchupOk || st.seekableEnd > st.seekableStart;
+  const canFwd = !atLive;
+  useEffect(() => {
+    // the focused button vanished (e.g. +10 s once back at live): focus play instead
+    const root = rootRef.current;
+    if (uiVisible && !panel && root && !root.contains(document.activeElement)) focusEl(root.querySelector<HTMLElement>('[data-play]'), false);
+  }, [canBack, canFwd]);
   const title = mode === 'vod' ? req.title : progAtHead?.title || req.title;
   const liveScore = mode !== 'vod' ? matchEvent(progAtHead, scores) : undefined;
   const subtitle = mode === 'vod' ? req.subtitle : [channel?.name, progAtHead?.subTitle].filter(Boolean).join(' · ') || req.subtitle;
@@ -752,15 +760,19 @@ export function Player({ req }: { req: PlayRequest }) {
 
         <div className="bottom" onPointerUp={onSurfaceTap}>
           <div className="controls" data-row data-row-lock>
-            <button className="pbtn" data-f onClick={() => seekBy(-10)} aria-label="-10s" disabled={mode === 'live' && !catchupOk && !(st.seekableEnd > st.seekableStart)}>
-              <IcBack10 />
-            </button>
+            {canBack && (
+              <button className="pbtn" data-f onClick={() => seekBy(-10)} aria-label="-10s">
+                <IcBack10 />
+              </button>
+            )}
             <button className="pbtn big" data-f data-play onClick={togglePlay} aria-label="play/pause">
               {playing ? <IcPause /> : <IcPlay />}
             </button>
-            <button className="pbtn" data-f onClick={() => seekBy(10)} aria-label="+10s" disabled={mode === 'live' && atLive}>
-              <IcFwd10 />
-            </button>
+            {canFwd && (
+              <button className="pbtn" data-f onClick={() => seekBy(10)} aria-label="+10s">
+                <IcFwd10 />
+              </button>
+            )}
             {mode !== 'vod' && (
               <button className={`live-badge ${atLive ? '' : 'off'}`} data-f onClick={() => !atLive && (mode === 'live' && dvr ? eng()?.seek(st.seekableEnd - lag) : void goLive())} title={t('player.goLive')}>
                 {t('player.live')}

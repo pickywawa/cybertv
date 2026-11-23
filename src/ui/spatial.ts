@@ -144,6 +144,20 @@ export function move(dir: Dir): boolean {
   const all = focusables(scope);
   const others = row && (dir === 'up' || dir === 'down') ? all.filter((e) => !row.contains(e)) : all;
   let target = best(active, others, dir);
+  // a tab row lying between here and the target is never skipped (the closest wins)
+  if (target && (dir === 'up' || dir === 'down')) {
+    const a = active.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+    let gap = Infinity;
+    for (const r of scope.querySelectorAll<HTMLElement>('[data-row][data-tabs]')) {
+      if (r === row || r.contains(target) || !visible(r)) continue;
+      const rr = r.getBoundingClientRect();
+      const between = dir === 'up' ? rr.bottom <= a.top + 4 && rr.top >= t.bottom - 4 : rr.top >= a.bottom - 4 && rr.bottom <= t.top + 4;
+      const d = dir === 'up' ? a.top - rr.bottom : rr.top - a.bottom;
+      const el = between && d < gap ? currentTab(r) || best(active, focusables(r), dir) : null;
+      if (el) (gap = d), (target = el);
+    }
+  }
   // 2. entering a row: restore its remembered item
   if (target) {
     const trow = target.closest('[data-row]');

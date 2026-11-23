@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp, type GridFilter } from '@/state/store';
 import { t } from '@/core/i18n';
-import { gridMovies, gridSeries } from '@/core/repo';
+import { dataWorker } from '@/core/workers';
+import type { GridItem } from '@/core/catalog';
 import { langPrefs } from '@/core/prefs';
-import type { Movie, Series } from '@/core/types';
 import { useAsync, useMediaQuery } from '../hooks';
 import { VirtualGrid } from '../components/VirtualGrid';
 import { PosterCard } from '../components/Cards';
 import { PageHeader } from '../components/BackButton';
 import { openMovie, openSeries, prioritizeEnrichment } from '../actions';
 import { isTvMode } from '@/core/platform';
-import { db } from '@/core/db';
-import { GENRES, genreKeys } from '@/core/util/genres';
+import { GENRES } from '@/core/util/genres';
 
 const SORTS = ['added', 'rating', 'year', 'title'] as const;
 const SORT_LABEL: Record<(typeof SORTS)[number], { fr: string; en: string }> = {
@@ -26,22 +25,15 @@ export function Grid({ kind, title, filter }: { kind: 'movie' | 'series'; title:
   const hideAdult = useApp((s) => s.settings.hideAdult);
   const [sort, setSort] = useState(filter.sort || 'added');
   const mobile = useMediaQuery('(max-width: 760px)') && !isTvMode();
-  const items = useAsync<(Movie | Series)[]>(
-    () => (kind === 'movie' ? gridMovies(profile.id, { ...filter, sort }, hideAdult, langPrefs(profile)) : gridSeries(profile.id, { ...filter, sort }, hideAdult, langPrefs(profile))),
+  // read, sorted and tagged in the data worker: only slim rows come back (60 000 titles froze TV boxes)
+  const items = useAsync<GridItem[]>(
+    () => dataWorker().gridItems(profile.id, kind, { ...filter, sort }, hideAdult, langPrefs(profile)),
     [kind, JSON.stringify(filter), sort, profile.id, profile.lang, profile.audioLangs?.join(), profile.subLangs?.join()],
     { key: `grid:${profile.id}:${kind}:${JSON.stringify(filter)}:${sort}:${hideAdult}:${profile.lang}:${profile.audioLangs?.join()}:${profile.subLangs?.join()}` },
   );
   // sub-categories (genres) present in this list, from TMDB genres and provider category names
   const [sub, setSub] = useState<string | null>(null);
-  const catNames = useAsync(
-    async () => new Map((await db.categories.where('[profileId+kind]').between([profile.id, ''], [profile.id, '\uffff']).toArray()).map((c) => [c.id, c.name])),
-    [profile.id],
-    { key: `catnames:${profile.id}` },
-  );
-  const tagged = useMemo(() => {
-    if (!items || !catNames) return null;
-    return items.map((x) => ({ x, g: genreKeys(x, x.categoryId ? catNames.get(x.categoryId) : undefined) }));
-  }, [items, catNames]);
+  const tagged = useMemo(() => items?.map((x) => ({ x, g: x.g })) ?? null, [items]);
   const subs = useMemo(() => {
     if (!tagged || filter.genre) return [];
     const n = new Map<string, number>();

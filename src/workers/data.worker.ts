@@ -8,6 +8,8 @@ import { Enricher, enrichSeason, refreshLists } from '@/core/enrich/enrich';
 import { db, getMeta, setMeta } from '@/core/db';
 import type { TmdbCollection, TmdbPerson } from '@/core/enrich/tmdb';
 import type { Source, SyncProgress } from '@/core/types';
+import { gridItems, homeCatalog, similarByGenre, type GridQuery } from '@/core/catalog';
+import type { LangPrefs } from '@/core/util/lang';
 
 type Secrets = Record<string, string | undefined>;
 let enricher: Enricher | null = null;
@@ -122,6 +124,17 @@ const api = {
 
   async validateTmdb(token: string) {
     return new Tmdb(token).validate();
+  },
+
+  // catalogue-wide queries: read and sorted here, only screen-sized results go back to the UI
+  homeCatalog(profileId: string, lang: string, hideAdult: boolean, prefs: LangPrefs) {
+    return homeCatalog(profileId, lang, hideAdult, prefs);
+  },
+  gridItems(profileId: string, kind: 'movie' | 'series', q: GridQuery, hideAdult: boolean, prefs?: LangPrefs) {
+    return gridItems(profileId, kind, q, hideAdult, prefs);
+  },
+  similarByGenre(profileId: string, kind: 'movie' | 'series', groupKey: string, genre: string, prefs?: LangPrefs) {
+    return similarByGenre(profileId, kind, groupKey, genre, prefs);
   },
 };
 

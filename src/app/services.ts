@@ -201,8 +201,9 @@ export async function startEnrichment(p: Profile) {
         enrichBumpTimer = null;
         useApp.getState().bumpCatalog();
       };
-      if (now - lastEnrichBump > 4000) run();
-      else if (!enrichBumpTimer) enrichBumpTimer = window.setTimeout(run, 4000);
+      // posters / ratings filling in: every 15 s is enough (each refresh re-reads the visible screen)
+      if (now - lastEnrichBump > 15000) run();
+      else if (!enrichBumpTimer) enrichBumpTimer = window.setTimeout(run, 15000 - (now - lastEnrichBump));
     }),
   );
 }

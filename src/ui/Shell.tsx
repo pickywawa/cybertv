@@ -3,7 +3,7 @@ import { useApp, useRoute, type TabId } from '@/state/store';
 import { t } from '@/core/i18n';
 import { isTvMode } from '@/core/platform';
 import { Logo } from '@/app/App';
-import { useMediaQuery } from './hooks';
+import { ScreenActive, useMediaQuery } from './hooks';
 import { focusFirst } from './spatial';
 import { IcHome, IcLibrary, IcReplay, IcSearch, IcTv } from './icons';
 import { Home } from './screens/Home';
@@ -86,6 +86,7 @@ export function Shell() {
       <div className={`page page-${shownTab}`} ref={pageRef} key={shownTab} inert={route ? true : undefined}>
         {mobile && <MobileTop tab={shownTab} />}
         <ErrorBoundary onReset={() => setTab('home')}>
+        <ScreenActive.Provider value={!route && !player}>
         <Suspense fallback={<div className="empty"><div className="spinner big" style={{ margin: 'auto' }} /></div>}>
           {switching ? (
             <div className="tab-loading"><div className="spinner big" /></div>
@@ -100,12 +101,15 @@ export function Shell() {
             </>
           )}
         </Suspense>
+        </ScreenActive.Provider>
         </ErrorBoundary>
       </div>
       {route && (
-        <Suspense fallback={null}>
-          <StackView />
-        </Suspense>
+        <ScreenActive.Provider value={!player}>
+          <Suspense fallback={null}>
+            <StackView />
+          </Suspense>
+        </ScreenActive.Provider>
       )}
       {mobile && <BottomNav tab={tab} setTab={setTab} />}
       <PinGate />

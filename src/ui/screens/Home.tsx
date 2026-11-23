@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/state/store';
 import { t, fmtDuration } from '@/core/i18n';
 import { db, setMeta } from '@/core/db';
-import {
-  continueWatching, dedup, dedupLang, favoritesOf, hideFromContinue, latestMovies, latestSeries, matchMovies, matchSeries, moviesSample, tmdbLists,
-} from '@/core/repo';
+import { continueWatching, dedup, favoritesOf, hideFromContinue, matchMovies, matchSeries } from '@/core/repo';
+import { dataWorker } from '@/core/workers';
 import type { Movie, Series, WatchState } from '@/core/types';
 import { useAsync } from '../hooks';
 import { Rail } from '../components/Rail';
@@ -14,7 +13,7 @@ import { IcFilm, IcGlobe, IcInfo, IcKids, IcLive, IcPlay, IcSeries } from '../ic
 import { openMovie, openSeries, playMovie, prioritizeEnrichment, resume } from '../actions';
 import { resizeTmdb } from '@/core/enrich/tmdb';
 import { langPrefs } from '@/core/prefs';
-import { langScore, sortByLang } from '@/core/util/lang';
+import { sortByLang } from '@/core/util/lang';
 import { traktLists } from '@/core/trakt';
 import type { TmdbListItem } from '@/core/types';
 
@@ -50,31 +49,12 @@ export function Home() {
   const prefsKey = homePrefsKey(profile);
   const data = useAsync(async () => {
     const prefs = langPrefs(profile);
-    const lists = await tmdbLists(profile.lang);
-    const [cont, fresh, newSeries, top0, nowPlaying0, popularMovies0, topRated0, trendingTv0, popularTv0, favs, sample0] = await Promise.all([
+    // the film / series rails come from the data worker: the whole catalogue is read there, never here
+    const [cont, vod, favs] = await Promise.all([
       continueWatching(profile.id),
-      latestMovies(profile.id, 40, hideAdult, prefs),
-      latestSeries(profile.id, 40, hideAdult, prefs),
-      matchMovies(profile.id, lists?.trendingMovies || []),
-      matchMovies(profile.id, lists?.nowPlaying || []),
-      matchMovies(profile.id, lists?.popularMovies || []),
-      matchMovies(profile.id, lists?.topRatedMovies || []),
-      matchSeries(profile.id, lists?.trendingTv || []),
-      matchSeries(profile.id, lists?.popularTv || []),
+      dataWorker().homeCatalog(profile.id, profile.lang, hideAdult, prefs),
       favoritesOf(profile.id),
-      moviesSample(profile.id, 4000),
     ]);
-    // content in the user's audio languages first (secondary language next, then untagged, then the rest)
-    const L = <T extends Movie | Series>(rows: T[]) => sortByLang(rows, prefs);
-    const top = L(top0.filter((m) => langScore(m, prefs) < 4).length >= 6 ? top0.filter((m) => langScore(m, prefs) < 4) : top0);
-    const [nowPlaying, popularMovies, topRated, trendingTv, popularTv] = [L(nowPlaying0), L(popularMovies0), L(topRated0), L(trendingTv0), L(popularTv0)];
-    const sample = dedupLang(sample0, prefs);
-    // genre rails from enriched movies
-    const byGenre = new Map<string, Movie[]>();
-    for (const m of sample) for (const g of m.genres || []) (byGenre.get(g) || byGenre.set(g, []).get(g)!).push(m);
-    const genres = [...byGenre.entries()].filter(([, l]) => l.length >= 6).sort((a, b) => b[1].length - a[1].length).slice(0, 5);
-    const mustSee = topRated.length >= 6 ? topRated : L(sample.filter((m) => (m.rating || 0) >= 7.3).sort((a, b) => (b.rating || 0) - (a.rating || 0))).slice(0, 30);
-    const kids = sample.filter((m) => m.universe === 'kids' || (m.genres || []).some((g) => /anim|famil/i.test(g))).slice(0, 30);
     const favMovies = (await db.movies.bulkGet(favs.filter((f) => f.kind === 'movie').map((f) => f.itemId))).filter(Boolean) as Movie[];
     const favSeries = (await db.series.bulkGet(favs.filter((f) => f.kind === 'series').map((f) => f.itemId))).filter(Boolean) as Series[];
     // Trakt: recommendations, watchlist and personal lists, only what the sources carry
@@ -97,8 +77,7 @@ export function Home() {
       : null;
     return {
       trakt,
-      cont, fresh, newSeries, top: top.slice(0, 10), nowPlaying, popularMovies, mustSee, trendingTv, popularTv, genres, kids, favMovies, favSeries,
-      hasVod: sample.length > 0 || newSeries.length > 0,
+      cont, ...vod, favMovies, favSeries,
     };
   }, [profile.id, prefsKey, hideAdult], { key: homeKey(profile.id, prefsKey, hideAdult) });
 

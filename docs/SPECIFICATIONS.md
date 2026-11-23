@@ -622,6 +622,14 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - **Changement d'onglet** : un indicateur de chargement est affiché d'abord, puis l'écran (parfois lourd, ex. Films) est monté.
 - **Lecteur** : flèche haut ouvre la barre d'actions (focus sur lecture / pause) ; bas y sélectionne la barre de progression, qui n'a plus de cadre (curseur agrandi, couleur principale) ; les boutons sélectionnés deviennent un rond plein de la couleur principale. Sur le direct, bas (barre masquée) passe toujours à la chaîne suivante.
 
+### V1.16 — Fluidité sur TV avec un gros catalogue
+
+- **Constat** (catalogue de test de 60 000 films et 15 000 séries, `big` / `big` sur le faux panneau Xtream du serveur de dev) : l'écran lisait tout le catalogue dans le fil de l'interface. La fiche d'un film parcourait les 60 000 films pour « Similaires » (60 001 lectures de curseur en 10 s), l'Accueil et les grilles relisaient tout le catalogue toutes les 4 s pendant l'enrichissement TMDB, y compris l'Accueil caché sous une fiche. Sur une box TV, environ 10 à 20 fois plus lente qu'un Mac, l'ouverture d'une fiche ou d'une page acteur attendait derrière ce travail (environ 30 s).
+- **Requêtes sur tout le catalogue dans le worker de données** (`src/core/catalog.ts`, sans import natif ni UI) : rangées de films et séries de l'Accueil (`homeCatalog`), grilles avec leurs genres (`gridItems`, lignes allégées), titres du même genre sur une fiche (`similarByGenre`). L'écran ne reçoit que ce qu'il affiche.
+- **Écrans couverts figés** (`ScreenActive`) : l'onglet sous une fiche et tout ce qui est sous le lecteur ne suivent plus les mises à jour du catalogue ou du guide ; ils se remettent à jour quand ils réapparaissent.
+- **Rafraîchissements pendant l'enrichissement TMDB** : toutes les 15 s au lieu de 4 s.
+- Résultat mesuré sur le même catalogue : 45 lectures indexées en 15 s avec une fiche ouverte (au lieu de 60 000) ; la page acteur s'affiche en 0,65 s, requête TMDB comprise.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

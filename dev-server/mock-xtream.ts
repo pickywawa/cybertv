@@ -126,6 +126,25 @@ const SERIES_LIST = SERIES.map(([name, tmdb, cat, seasons], i) => ({
   seasons_count: seasons,
 }));
 
+/**
+ * user "big" / pass "big": a provider-sized catalogue (60 000 films, 15 000 series) to measure
+ * how the app copes on slow TV boxes. Titles reuse the demo ones with real TMDB ids.
+ */
+const BIG_N = { vod: 60000, series: 15000 };
+let bigCache: { vod: typeof VOD; series: typeof SERIES_LIST } | null = null;
+function big() {
+  if (bigCache) return bigCache;
+  const vod = Array.from({ length: BIG_N.vod }, (_, i) => {
+    const b = VOD[i % VOD.length];
+    return { ...b, stream_id: 100000 + i, name: i < VOD.length ? b.name : `${b.name.replace(/ \(\d{4}\).*$/, '')} ${Math.floor(i / VOD.length)} (${2000 + (i % 25)})`, added: String(NOW - i * 600), tmdb: i < VOD.length ? b.tmdb : '' };
+  });
+  const series = Array.from({ length: BIG_N.series }, (_, i) => {
+    const b = SERIES_LIST[i % SERIES_LIST.length];
+    return { ...b, series_id: 200000 + i, name: i < SERIES_LIST.length ? b.name : `${b.name} ${Math.floor(i / SERIES_LIST.length)}`, tmdb: i < SERIES_LIST.length ? b.tmdb : '' };
+  });
+  return (bigCache = { vod, series });
+}
+
 function epgFor(ch: (typeof LIVE)[number], from: number, to: number) {
   const titles = ['Journal', 'Magazine', 'Documentaire', 'Film', 'Série', 'Sport en direct', 'Talk-show', 'Météo', 'Divertissement'];
   const out: { title: string; desc: string; start: number; stop: number }[] = [];
@@ -176,9 +195,12 @@ export function mockXtreamPlugin(): Plugin {
         const path = url.pathname;
 
         if (path === '/player_api.php') {
-          if (q.get('username') !== USER || q.get('password') !== PASS) return json(res, { user_info: { auth: 0 } });
+          const isBig = q.get('username') === 'big' && q.get('password') === 'big';
+          if (!isBig && (q.get('username') !== USER || q.get('password') !== PASS)) return json(res, { user_info: { auth: 0 } });
           const action = q.get('action');
           const cat = q.get('category_id');
+          const VODL = isBig ? big().vod : VOD;
+          const SERL = isBig ? big().series : SERIES_LIST;
           switch (action) {
             case null:
             case '':
@@ -192,11 +214,11 @@ export function mockXtreamPlugin(): Plugin {
             case 'get_live_categories': return json(res, LIVE_CATS.map((c) => ({ category_id: c.id, category_name: c.name, parent_id: 0 })));
             case 'get_live_streams': return json(res, LIVE.filter((s) => !cat || s.category_id === cat));
             case 'get_vod_categories': return json(res, VOD_CATS.map((c) => ({ category_id: c.id, category_name: c.name, parent_id: 0 })));
-            case 'get_vod_streams': return json(res, VOD.filter((s) => !cat || s.category_id === cat));
+            case 'get_vod_streams': return json(res, VODL.filter((s) => !cat || s.category_id === cat));
             case 'get_series_categories': return json(res, SERIES_CATS.map((c) => ({ category_id: c.id, category_name: c.name, parent_id: 0 })));
-            case 'get_series': return json(res, SERIES_LIST.filter((s) => !cat || s.category_id === cat));
+            case 'get_series': return json(res, SERL.filter((s) => !cat || s.category_id === cat));
             case 'get_vod_info': {
-              const v = VOD.find((x) => String(x.stream_id) === q.get('vod_id'));
+              const v = VODL.find((x) => String(x.stream_id) === q.get('vod_id'));
               if (!v) return json(res, {});
               return json(res, {
                 info: { tmdb_id: v.tmdb, name: v.name, plot: '', releasedate: `${v.year}-01-01`, duration_secs: 5400 + (v.stream_id % 40) * 60 },
@@ -204,7 +226,7 @@ export function mockXtreamPlugin(): Plugin {
               });
             }
             case 'get_series_info': {
-              const s = SERIES_LIST.find((x) => String(x.series_id) === q.get('series_id'));
+              const s = SERL.find((x) => String(x.series_id) === q.get('series_id'));
               if (!s) return json(res, {});
               const episodes: Record<string, unknown[]> = {};
               for (let season = 1; season <= s.seasons_count; season++) {

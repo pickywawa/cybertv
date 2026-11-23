@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DependencyList } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type DependencyList } from 'react';
 import { useApp } from '@/state/store';
 
 /**
@@ -18,12 +18,23 @@ export function cached<T>(key: string): T | undefined {
 }
 
 /**
- * Async query re-run on deps change and whenever the catalog version bumps.
+ * false for a screen that is covered (the tab under a film page, everything under the player):
+ * its queries don't follow catalogue / guide updates until it is shown again — on a TV box, the
+ * Home recomputed behind a film page every few seconds while TMDB enrichment was running.
+ */
+export const ScreenActive = createContext(true);
+
+/**
+ * Async query re-run on deps change and whenever the catalog version bumps (visible screens only).
  * With `key`, the previous result is shown immediately (stale-while-revalidate).
  */
 export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList, opts: { epg?: boolean; key?: string } = {}): T | undefined {
-  const catalogVersion = useApp((s) => s.catalogVersion);
-  const epgVersion = useApp((s) => (opts.epg ? s.epgVersion : 0));
+  const active = useContext(ScreenActive);
+  const liveCatalog = useApp((s) => s.catalogVersion);
+  const liveEpg = useApp((s) => (opts.epg ? s.epgVersion : 0));
+  const versions = useRef({ c: liveCatalog, e: liveEpg });
+  if (active) versions.current = { c: liveCatalog, e: liveEpg };
+  const { c: catalogVersion, e: epgVersion } = versions.current;
   const [v, setV] = useState<T | undefined>(() => (opts.key ? cached<T>(opts.key) : undefined));
   const seq = useRef(0);
   const applied = useRef(0);

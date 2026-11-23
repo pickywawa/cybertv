@@ -20,6 +20,7 @@ export default defineConfig(({ command }) => ({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   worker: { format: 'es' },
   build: { target: 'es2020', sourcemap: false, chunkSizeWarningLimit: 900 },
-  server: { port: 5173, strictPort: true },
+  // js-profiling: lets the dev page record JS profiles (performance work on big catalogues)
+  server: { port: 5173, strictPort: true, headers: { 'Document-Policy': 'js-profiling' } },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
 }) as any);

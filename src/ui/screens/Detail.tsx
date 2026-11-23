@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/state/store';
 import { t, fmtRuntime, fmtDuration } from '@/core/i18n';
 import { db } from '@/core/db';
-import { availableByTmdb, dedupLang, episodesOf, toggleFavorite } from '@/core/repo';
+import { availableByTmdb, episodesOf, toggleFavorite } from '@/core/repo';
 import type { Episode, Movie, Person, Series } from '@/core/types';
 import { resizeTmdb } from '@/core/enrich/tmdb';
 import { dataWorker } from '@/core/workers';
@@ -81,9 +81,8 @@ function useRecommendations(kind: 'movie' | 'series', it: Movie | Series) {
     if (recos.length >= 3) return { title: t('detail.recommended'), items: recos.slice(0, 24) };
     const g = it.genres?.[0];
     if (!g) return { title: t('detail.recommended'), items: recos };
-    const table = kind === 'movie' ? db.movies : db.series;
-    const rows = await (table as typeof db.movies).where('profileId').equals(profile.id).filter((x) => x.groupKey !== it.groupKey && !!x.genres?.includes(g)).limit(80).toArray();
-    const more = dedupLang(rows, prefs).sort((a, b) => (b.imdbRating || b.rating || 0) - (a.imdbRating || a.rating || 0));
+    // same genre: searched in the data worker's copy of the catalogue (never a scan of every title here)
+    const more = (await dataWorker().similarByGenre(profile.id, kind, it.groupKey, g, prefs)) as typeof recos;
     const seen = new Set(recos.map((x) => x.groupKey));
     return { title: recos.length ? t('detail.recommended') : t('detail.similar'), items: [...recos, ...more.filter((x) => !seen.has(x.groupKey))].slice(0, 24) };
   }, [kind, it.id, it.recos?.join(), it.genres?.join()]);

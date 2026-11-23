@@ -99,6 +99,8 @@ interface AppState {
   player: PlayRequest | null;
   /** a play was asked for and is being prepared (immediate feedback on OK / tap) */
   launching: boolean;
+  /** profile just received from a phone (install on a TV): the setup screen shows its download */
+  importedProfile?: Profile;
   setLaunching(v: boolean): void;
   sync: SyncState;
   /** bumped when the catalog/enrichment changes so views re-query */

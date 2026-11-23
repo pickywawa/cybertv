@@ -590,6 +590,15 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - **Assistant** : liste des TV lisible (petite icône, nom sur plusieurs lignes), bouton « Terminer » à la fin.
 - **Client ADB** : les messages tardifs d'un flux précédent sont ignorés à l'ouverture d'un nouveau.
 
+- **Première configuration par le téléphone, en un écran** :
+  - dès que le téléphone envoie ses réglages (QR code), le profil et les sources sont créés directement, sans écran de confirmation ni étape TMDB (la clé TMDB du téléphone est reprise) ;
+  - l'écran « Import des réglages du téléphone… » enchaîne aussitôt sur le téléchargement ;
+  - quand c'est le téléphone qui installe l'app (lien `cyberiptv://import`), la TV ouvre aussi cet écran de téléchargement au lieu de l'accueil.
+- **Téléchargement détaillé** :
+  - la synchro publie `done` / `total` par lot de 2 000 éléments et la taille de chaque liste dès qu'elle est reçue ;
+  - l'écran affiche « 12 400 / 104 000 » avec une barre, une estimation du temps restant (vitesse de l'étape en cours), le temps écoulé, « téléchargement de la liste… » pendant le téléchargement, et le nombre de programmes du guide.
+- **Tenir sur un écran de TV** (environ 540 px de haut) : sur les écrans courts, la configuration est compactée (bloc plus large, emojis sur une ligne, espacements réduits, titre d'accueil masqué, QR code et instructions côte à côte). Vérifié à 960×540 : ni l'étape profil, ni le QR code, ni le téléchargement ne défilent.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

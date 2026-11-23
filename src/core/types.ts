@@ -275,6 +275,9 @@ export interface SyncProgress {
   step: 'start' | 'live' | 'vod' | 'series' | 'epg' | 'enrich' | 'done' | 'error';
   message?: string;
   count?: number;
+  /** items saved so far out of the list size (live progress while a big list is written) */
+  done?: number;
+  total?: number;
 }
 
 /** Everything a playback needs, resolved on the main thread */

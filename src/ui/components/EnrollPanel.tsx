@@ -31,7 +31,7 @@ export function QrCode({ text, size = 240 }: { text: string; size?: number }) {
  * TV side of the QR enrolment: shows the code, waits for the phone, then asks for confirmation.
  * `onImport(payload, withPrefs)` applies it; the local server stops when the panel closes.
  */
-export function EnrollPanel({ onImport, onCancel }: { onImport: (p: EnrollPayload, withPrefs: boolean) => void | Promise<void>; onCancel?: () => void }) {
+export function EnrollPanel({ onImport, onCancel, auto }: { onImport: (p: EnrollPayload, withPrefs: boolean) => void | Promise<void>; onCancel?: () => void; auto?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<EnrollPayload | null>(null);
@@ -49,6 +49,8 @@ export function EnrollPanel({ onImport, onCancel }: { onImport: (p: EnrollPayloa
       if (p && waiting.current) {
         waiting.current = false;
         setPayload(p);
+        // first setup: everything the phone sent is applied at once, no confirmation screen
+        if (auto) void onImport(p, true);
       }
     };
     const timer = window.setInterval(() => void pollEnroll().then(got, () => {}), 1500);
@@ -62,6 +64,32 @@ export function EnrollPanel({ onImport, onCancel }: { onImport: (p: EnrollPayloa
   }, []);
 
   if (error) return <div className="enroll"><p className="msg-ko">{t('enroll.noNetwork')}</p></div>;
+
+  if (payload && auto) {
+    return (
+      <div className="enroll received" data-scope>
+        <h2>
+          <span className="spinner" /> {t('enroll.importing')}
+        </h2>
+        <ul className="enroll-list">
+          {payload.profile && (
+            <li>
+              <b>
+                {payload.profile.emoji} {payload.profile.name}
+              </b>
+              <span className="small muted">{t('enroll.profileIncluded')}</span>
+            </li>
+          )}
+          {payload.sources.map((s, i) => (
+            <li key={i}>
+              <b>{s.label || serverLabel(s.url)}</b>
+              <span className="small muted">{s.type.toUpperCase()} · {serverLabel(s.url)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
 
   if (payload) {
     return (
@@ -109,7 +137,7 @@ export function EnrollPanel({ onImport, onCancel }: { onImport: (p: EnrollPayloa
         <ol>
           <li>{t('enroll.step1')}</li>
           <li>{t('enroll.step2')}</li>
-          <li>{t('enroll.step3')}</li>
+          <li>{t(auto ? 'enroll.step3auto' : 'enroll.step3')}</li>
         </ol>
         {url && <p className="small dim enroll-url">{url.replace(/\/[ae][a-z]*\/[a-f0-9]+$/, '/…')}</p>}
         <p className="small dim">{t('enroll.lanOnly')}</p>

@@ -800,3 +800,39 @@ a.btn { text-decoration: none; }
 .tvi .list-item { align-items: center; gap: 14px; }
 .tvi .list-item > svg { width: 28px; height: 28px; flex: none; color: var(--text-2); }
 .tvi .list-item .grow { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+
+/* first download */
+.sync-row { align-items: flex-start; }
+.sync-row .grow { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sync-row-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.sync-row.on { background: var(--surface-2); }
+.sync-bar { display: block; height: 6px; border-radius: 999px; background: var(--surface); overflow: hidden; }
+.sync-bar i { display: block; height: 100%; background: var(--accent, #2ee59d); border-radius: inherit; transition: width 0.4s; }
+
+/* ───────── setup on short screens (TVs: ~540 px of height) — everything on one screen ───────── */
+@media (max-height: 640px) and (min-width: 700px) {
+  .center-screen:has(.onboard) { justify-content: safe center; padding-top: calc(10px + var(--sat)); padding-bottom: 10px; }
+  .onboard { width: min(940px, 100%); padding: 0; margin: 0 auto; }
+  .onboard > .logo { font-size: 1.1rem !important; }
+  .onboard > h1, .onboard > h1 + p { display: none; }
+  .onboard .steps { margin: 8px 0 12px; }
+  .onboard .form { gap: 9px; }
+  .onboard .form h2 { font-size: 1.1rem; margin: 0; }
+  .onboard .field { gap: 4px; }
+  .onboard .input { height: 40px; }
+  .onboard .emoji-grid { flex-wrap: nowrap; gap: 6px; }
+  .onboard .emoji-grid button { width: 42px; height: 42px; font-size: 1.35rem; flex: none; }
+  .onboard .swatch { width: 32px; height: 32px; }
+  .onboard .seg button { height: 36px; }
+  .onboard .btn { min-height: 40px; }
+  .onboard .btn-row { margin-top: 2px !important; }
+  .onboard .qr-cta { min-height: 44px; }
+  /* QR panel: code left, steps right, at once */
+  .onboard .enroll { flex-wrap: nowrap; gap: 28px; }
+  .onboard .enroll-qr { width: 230px; height: 230px; }
+  .onboard .enroll-steps ol { gap: 4px; line-height: 1.35; }
+  /* download: compact rows */
+  .onboard .sync-step .list { gap: 6px; }
+  .onboard .sync-step .list-item { padding-top: 8px; padding-bottom: 8px; }
+  .onboard .enroll-list li { padding: 7px 12px; }
+}

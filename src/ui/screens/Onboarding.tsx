@@ -19,7 +19,9 @@ const DEV_TMDB = (import.meta.env.DEV && (import.meta.env.VITE_DEV_TMDB_TOKEN as
 
 export function Onboarding({ onDone }: { onDone?: () => void }) {
   const firstProfile = useApp((s) => s.screen) === 'onboarding';
-  const [step, setStep] = useState(0);
+  // a phone that installed the app here already created the profile: straight to its download
+  const importedProfile = useApp((s) => s.importedProfile);
+  const [step, setStep] = useState(importedProfile ? 3 : 0);
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState(EMOJIS[0]);
   const [color, setColor] = useState(COLORS[0]);
@@ -32,33 +34,38 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
   const [draft, setDraft] = useState<SourceDraft>(emptyDraft());
   const [token, setToken] = useState(DEV_TMDB);
   const [tokenState, setTokenState] = useState<'idle' | 'busy' | 'ok' | 'ko'>('idle');
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(importedProfile || null);
   // TV: the phone is the easiest way to enter credentials, so it is offered first
   const [qr, setQr] = useState(false);
   const [phonePrefs, setPhonePrefs] = useState<EnrollPayload['prefs'] | undefined>();
-  const fromPhone = (p: EnrollPayload, withPrefs: boolean) => {
-    setDrafts((d) => [
-      ...d,
-      ...p.sources.map((s) => ({
-        type: s.type, label: s.label, url: s.url, backups: s.backups || [], username: s.username || '', password: s.password || '',
-        epg: (s.epgUrls || []).join('\n'),
-      })),
-    ]);
-    if (p.tmdb) setToken(p.tmdb);
-    // the phone's profile (name, emoji, colour) when it sent it
+  /** sources came from the phone (web form, no profile): only the name is left to type */
+  const [imported, setImported] = useState(false);
+  const fromPhone = async (p: EnrollPayload, withPrefs: boolean) => {
+    const phoneDrafts: SourceDraft[] = p.sources.map((s) => ({
+      type: s.type, label: s.label, url: s.url, backups: s.backups || [], username: s.username || '', password: s.password || '',
+      epg: (s.epgUrls || []).join('\n'),
+    }));
+    // the phone sent its profile: everything is created at once and the download starts
     if (p.profile) {
-      setName((n) => n.trim() || p.profile!.name);
-      setEmoji(p.profile.emoji);
-      setColor(p.profile.color);
+      if (p.prefs?.lang) changeLang(p.prefs.lang);
+      await finishWith({
+        name: p.profile.name, emoji: p.profile.emoji, color: p.profile.color, lang: p.prefs?.lang || lang,
+        prefs: withPrefs ? p.prefs : undefined, drafts: [...drafts, ...phoneDrafts], token: p.tmdb || token,
+      });
+      setQr(false);
+      return;
     }
+    setImported(true);
+    setDrafts((d) => [...d, ...phoneDrafts]);
+    if (p.tmdb) setToken(p.tmdb);
     if (withPrefs && p.prefs) {
       setPhonePrefs(p.prefs);
       if (p.prefs.lang) changeLang(p.prefs.lang);
     }
     setDraft(emptyDraft());
     setQr(false);
-    // a name is still needed when the phone (web form) didn't send a profile
-    setStep(p.profile || name.trim() ? 2 : 0);
+    // a name is still needed when the phone (web form) didn't send a profile; the rest is done
+    setStep(0);
   };
 
   const changeLang = (l: Lang) => {
@@ -85,16 +92,19 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
     setTokenState((await dataWorker().validateTmdb(token.trim())) ? 'ok' : 'ko');
   };
 
-  const finish = async () => {
-    const p = await createProfile({ name, emoji, color, lang });
-    if (phonePrefs) {
-      const patch = Object.fromEntries(Object.entries(phonePrefs).filter(([k, v]) => v !== undefined && k !== 'lang')) as Partial<Profile>;
+  const finish = () =>
+    finishWith({ name, emoji, color, lang, prefs: phonePrefs, drafts: allDrafts, token });
+
+  const finishWith = async (o: { name: string; emoji: string; color: string; lang: Lang; prefs?: EnrollPayload['prefs']; drafts: SourceDraft[]; token: string }) => {
+    const p = await createProfile({ name: o.name.trim(), emoji: o.emoji, color: o.color, lang: o.lang });
+    if (o.prefs) {
+      const patch = Object.fromEntries(Object.entries(o.prefs).filter(([k, v]) => v !== undefined && k !== 'lang')) as Partial<Profile>;
       if (Object.keys(patch).length) await updateProfile(p.id, patch);
     }
-    for (const d of allDrafts) {
+    for (const d of o.drafts) {
       await saveSource(p.id, draftInput(d));
     }
-    if (token.trim()) await setTmdbToken(p.id, token.trim());
+    if (o.token.trim()) await setTmdbToken(p.id, o.token.trim());
     const fresh = (await db.profiles.get(p.id))!;
     setProfile(fresh);
     setStep(3);
@@ -115,7 +125,7 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
           {[0, 1, 2, 3].map((i) => <i key={i} className={i <= step ? 'on' : ''} />)}
         </div>
 
-        {step === 0 && qr && <EnrollPanel onImport={fromPhone} onCancel={() => setQr(false)} />}
+        {step === 0 && qr && <EnrollPanel auto onImport={fromPhone} onCancel={() => setQr(false)} />}
 
         {step === 0 && !qr && (
           <div className="form">
@@ -150,12 +160,12 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
             </div>
             <div className="btn-row" style={{ marginTop: 10 }}>
               {onDone && <button className="btn ghost" data-f onClick={onDone}>{t('common.cancel')}</button>}
-              <button className="btn primary" data-f disabled={!name.trim()} onClick={() => setStep(1)}>{t('common.next')}</button>
+              <button className="btn primary" data-f disabled={!name.trim()} onClick={() => (imported ? void finish() : setStep(1))}>{t('common.next')}</button>
             </div>
           </div>
         )}
 
-        {step === 1 && qr && <EnrollPanel onImport={fromPhone} onCancel={() => setQr(false)} />}
+        {step === 1 && qr && <EnrollPanel auto onImport={fromPhone} onCancel={() => setQr(false)} />}
 
         {step === 1 && !qr && (
           <div className="form">
@@ -218,41 +228,99 @@ export function Onboarding({ onDone }: { onDone?: () => void }) {
   );
 }
 
+interface StepProgress {
+  done?: number;
+  total?: number;
+  /** first time items were counted (rate → time left) */
+  since?: number;
+  sinceDone?: number;
+  count?: number;
+}
+
+const fmtSecs = (sec: number) => {
+  const s = Math.max(0, Math.round(sec));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`;
+};
+
+/**
+ * First download, step by step: items saved out of the list size, time left (from the speed of
+ * the current step), elapsed time — the first sync of a big catalogue takes minutes on a TV.
+ */
 function SyncStep({ profile }: { profile: Profile }) {
   const sync = useApp((s) => s.sync);
-  // counts per source, summed per step
-  const [bySource, setBySource] = useState<Record<string, number>>({});
+  const [steps, setSteps] = useState<Record<string, StepProgress>>({});
+  const [startedAt] = useState(Date.now());
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const tm = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tm);
+  }, []);
   useEffect(() => {
     const p = sync.progress;
-    if (p?.count !== undefined && (p.step === 'live' || p.step === 'vod' || p.step === 'series')) setBySource((s) => ({ ...s, [`${p.step}|${p.sourceId}`]: p.count! }));
-    if (p?.step === 'epg' && p.count) setBySource((s) => ({ ...s, 'epg|': (s['epg|'] || 0) + p.count! }));
+    if (!p || !['live', 'vod', 'series', 'epg'].includes(p.step)) return;
+    setSteps((all) => {
+      const cur = { ...(all[p.step] || {}) };
+      if (p.total !== undefined) {
+        cur.total = p.total;
+        cur.done = p.done ?? 0;
+        if (cur.since === undefined || (p.done ?? 0) === 0) {
+          cur.since = Date.now();
+          cur.sinceDone = p.done ?? 0;
+        }
+      }
+      if (p.step === 'epg' && p.count) cur.count = (cur.count || 0) + p.count;
+      else if (p.count !== undefined) cur.count = (cur.count || 0) + p.count;
+      return { ...all, [p.step]: cur };
+    });
   }, [sync.progress]);
-  const seen: Record<string, number> = {};
-  for (const [k, v] of Object.entries(bySource)) {
-    const step = k.split('|')[0];
-    seen[step] = (seen[step] || 0) + v;
-  }
-  const ready = seen.live !== undefined || (!sync.running && sync.progress);
-  const steps = ['live', 'vod', 'series', 'epg'] as const;
+  const active = sync.running ? sync.progress?.step : undefined;
+  const order = ['live', 'vod', 'series', 'epg'] as const;
+  const activeIdx = order.indexOf(active as (typeof order)[number]);
+  const ready = steps.live?.count !== undefined || (!sync.running && sync.progress);
+  const nf = new Intl.NumberFormat();
   return (
-    <div className="form">
+    <div className="form sync-step">
       <h2>{t('onboard.syncing')}</h2>
+      <p className="small muted">{t('sync.elapsed', { t: fmtSecs((now - startedAt) / 1000) })}</p>
       <div className="list">
-        {steps.map((s) => {
-          const active = sync.running && sync.progress?.step === s;
-          const done = seen[s] !== undefined && !active;
+        {order.map((s, i) => {
+          const st = steps[s] || {};
+          const isActive = s === active;
+          const done = !isActive && (st.count !== undefined || (activeIdx > i && activeIdx >= 0) || (!sync.running && !!sync.progress));
+          let detail = '';
+          let left = '';
+          let pct: number | undefined;
+          if (isActive && st.total) {
+            pct = Math.min(1, (st.done || 0) / st.total);
+            detail = `${nf.format(st.done || 0)} / ${nf.format(st.total)}`;
+            const elapsed = (Date.now() - (st.since || Date.now())) / 1000;
+            const rate = elapsed > 2 ? ((st.done || 0) - (st.sinceDone || 0)) / elapsed : 0;
+            if (rate > 0) left = t('sync.left', { t: fmtSecs((st.total - (st.done || 0)) / rate) });
+          } else if (isActive && s === 'epg' && st.count) detail = t('sync.programs', { n: nf.format(st.count) });
+          else if (isActive) detail = t('sync.downloading');
+          else if (done && st.count !== undefined) detail = nf.format(st.count);
           return (
-            <div key={s} className="list-item">
-              {active ? <span className="spinner" /> : done ? <IcCheck width={20} height={20} color="var(--ok)" /> : <span style={{ width: 18 }} />}
-              <span className="grow">{t(`sync.${s}` as 'sync.live')}</span>
-              <span className="muted">{seen[s] ?? ''}</span>
+            <div key={s} className={`list-item sync-row ${isActive ? 'on' : ''}`}>
+              {isActive ? <span className="spinner" /> : done ? <IcCheck width={20} height={20} color="var(--ok)" /> : <span style={{ width: 20 }} />}
+              <span className="grow">
+                <span className="sync-row-top">
+                  <span>{t(`sync.${s}` as 'sync.live')}</span>
+                  <span className="muted small">{detail}</span>
+                </span>
+                {pct !== undefined && (
+                  <span className="sync-bar">
+                    <i style={{ width: `${Math.max(2, pct * 100)}%` }} />
+                  </span>
+                )}
+                {left && <span className="small dim">{left}</span>}
+              </span>
             </div>
           );
         })}
       </div>
       {sync.lastError && <p className="msg-ko">{sync.lastError}</p>}
-      {sync.progress?.message && sync.running && <p className="small dim ellipsis">{sync.progress.message}</p>}
-      <button className="btn primary" data-f data-autofocus disabled={!ready} onClick={() => void selectProfile(profile)}>
+      <p className="small dim">{t('sync.longHint')}</p>
+      <button className="btn primary" data-f data-autofocus disabled={!ready} onClick={() => (useApp.setState({ importedProfile: undefined }), void selectProfile(profile))}>
         {t('onboard.start')}
       </button>
     </div>

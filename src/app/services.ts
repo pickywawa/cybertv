@@ -118,7 +118,15 @@ async function applyImportLink(p: EnrollPayload) {
   try {
     // boot first (database, profiles list)
     for (let i = 0; i < 100 && !useApp.getState().booted && useApp.getState().screen === 'boot'; i++) await new Promise((r) => setTimeout(r, 100));
+    const first = (await db.profiles.count()) === 0 || useApp.getState().screen !== 'app';
     const prof = await importAsProfile(p);
+    if (first) {
+      // first start of the TV: the setup screen follows the download (counts, time left)
+      useApp.setState({ screen: 'onboarding', importedProfile: prof, booted: true });
+      setLang(prof.lang);
+      void runSync(prof.id);
+      return;
+    }
     await selectProfile(prof);
     useApp.getState().toast(t('enroll.fromPhoneDone', { name: prof.name }));
     void runSync(prof.id);

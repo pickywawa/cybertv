@@ -23,8 +23,11 @@ const fnv = (s: string) => {
   return (h >>> 0).toString(36);
 };
 
-async function bulkPutBatched<T>(table: { bulkPut(items: T[]): Promise<unknown> }, rows: T[]) {
-  for (let i = 0; i < rows.length; i += BATCH) await table.bulkPut(rows.slice(i, i + BATCH));
+async function bulkPutBatched<T>(table: { bulkPut(items: T[]): Promise<unknown> }, rows: T[], onBatch?: (done: number, total: number) => void) {
+  for (let i = 0; i < rows.length; i += BATCH) {
+    await table.bulkPut(rows.slice(i, i + BATCH));
+    onBatch?.(Math.min(rows.length, i + BATCH), rows.length);
+  }
 }
 
 /**
@@ -123,6 +126,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   progress({ sourceId: src.id, step: 'live' });
   const [lcats, lstreamsRaw] = await Promise.all([x.liveCategories(), x.liveStreams()]);
   const lstreams = xtreamList(lstreamsRaw, 'stream_id');
+  if (lstreams) progress({ sourceId: src.id, step: 'live', done: 0, total: lstreams.length });
   if (!lstreams) throw new Error('Liste des chaînes invalide');
   const cats = new Map<string, Category>();
   const catRows: Category[] = [];
@@ -154,7 +158,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
       } satisfies Channel;
     });
   await bulkPutBatched(db.categories, catRows);
-  await bulkPutBatched(db.channels, channels);
+  await bulkPutBatched(db.channels, channels, (done, total) => progress({ sourceId: src.id, step: 'live', done, total }));
   await pruneStale(db.channels, src.id, new Set(channels.map((c) => c.id)));
   progress({ sourceId: src.id, step: 'live', count: channels.length });
 
@@ -163,6 +167,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   // a failed or invalid answer skips movies for this sync (never "zero movies": that would wipe them)
   const [vcats, vstreamsRaw] = await Promise.all([dl.vcats, dl.vstreams]);
   const vstreams = xtreamList(vstreamsRaw, 'stream_id');
+  if (vstreams) progress({ sourceId: src.id, step: 'vod', done: 0, total: vstreams.length });
   const vodOk = !!vstreams;
   const vcatRows: Category[] = asArray<any>(vcats).map((c, i) => ({
     id: `${src.id}:vc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'vod',
@@ -188,7 +193,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   if (vodOk) {
     await mergeExisting(db.movies, src.id, movies, firstSync);
     await bulkPutBatched(db.categories, vcatRows);
-    await bulkPutBatched(db.movies, movies);
+    await bulkPutBatched(db.movies, movies, (done, total) => progress({ sourceId: src.id, step: 'vod', done, total }));
     await pruneStale(db.movies, src.id, new Set(movies.map((m) => m.id)));
   }
   progress({ sourceId: src.id, step: 'vod', count: vodOk ? movies.length : await db.movies.where('sourceId').equals(src.id).count() });
@@ -197,6 +202,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   progress({ sourceId: src.id, step: 'series' });
   const [scats, slistRaw] = await Promise.all([dl.scats, dl.slist]);
   const slist = xtreamList(slistRaw, 'series_id');
+  if (slist) progress({ sourceId: src.id, step: 'series', done: 0, total: slist.length });
   const seriesOk = !!slist;
   const scatRows: Category[] = asArray<any>(scats).map((c, i) => ({
     id: `${src.id}:sc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'series',
@@ -224,7 +230,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   if (seriesOk) {
     await mergeExisting(db.series, src.id, series, firstSync);
     await bulkPutBatched(db.categories, scatRows);
-    await bulkPutBatched(db.series, series);
+    await bulkPutBatched(db.series, series, (done, total) => progress({ sourceId: src.id, step: 'series', done, total }));
     await pruneStale(db.series, src.id, new Set(series.map((m) => m.id)));
   }
   if (vodOk && seriesOk) await pruneStale(db.categories, src.id, new Set([...catRows, ...vcatRows, ...scatRows].map((c) => c.id)));
@@ -366,9 +372,9 @@ async function syncM3u(src: Source, progress: Progress) {
   await mergeExisting(db.series, src.id, series, firstSync);
   const catRows = [...cats.values()];
   await bulkPutBatched(db.categories, catRows);
-  await bulkPutBatched(db.channels, channels);
-  await bulkPutBatched(db.movies, movies);
-  await bulkPutBatched(db.series, series);
+  await bulkPutBatched(db.channels, channels, (done, total) => progress({ sourceId: src.id, step: 'live', done, total }));
+  await bulkPutBatched(db.movies, movies, (done, total) => progress({ sourceId: src.id, step: 'vod', done, total }));
+  await bulkPutBatched(db.series, series, (done, total) => progress({ sourceId: src.id, step: 'series', done, total }));
   await bulkPutBatched(db.episodes, episodes);
   await pruneStale(db.categories, src.id, new Set(catRows.map((c) => c.id)));
   await pruneStale(db.channels, src.id, new Set(channels.map((c) => c.id)));

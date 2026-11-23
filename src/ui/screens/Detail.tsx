@@ -424,7 +424,7 @@ function SeriesDetail({ s }: { s: Series }) {
         {s.cast?.length ? <div className="small muted clamp2" style={{ marginTop: 16 }}><b>{t('detail.cast')} :</b> {s.cast.slice(0, 8).join(', ')}</div> : null}
       </HeroBlock>
 
-      <div className="tabs container" data-row style={{ marginTop: 10 }}>
+      <div className="tabs container" data-row data-tabs style={{ marginTop: 10 }}>
         <button data-f className={`tab ${tab === 'episodes' ? 'active' : ''}`} onClick={() => setTab('episodes')}>{t('detail.episodes')}</button>
         {similar && similar.length > 0 && (
           <button data-f className={`tab ${tab === 'similar' ? 'active' : ''}`} onClick={() => setTab('similar')}>{t('detail.similar')}</button>
@@ -434,7 +434,7 @@ function SeriesDetail({ s }: { s: Series }) {
       {tab === 'episodes' && (
         <>
           {seasons.length > 1 && (
-            <div className="season-btns" data-row>
+            <div className="season-btns" data-row data-tabs>
               {seasons.map((n) => (
                 <button key={n} data-f className={`season-btn ${n === curSeason ? 'active' : ''}`} onClick={() => setSeason(n)}>
                   S{n}

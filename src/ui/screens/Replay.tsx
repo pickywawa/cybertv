@@ -104,7 +104,7 @@ export function Replay() {
       ) : (
         <div className="hero-spacer" />
       )}
-      <div className="chips" data-row>
+      <div className="chips" data-row data-tabs>
         {(['all', 'arte', 'francetv', 'youtube', 'kids'] as Filter[]).map((f) => (
           <button key={f} data-f className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
             {f === 'all' ? t('replay.all') : f === 'kids' ? t('replay.kids') : PROVIDER_LABEL[f]}
@@ -296,7 +296,7 @@ export function ReplayPage({ id, item }: { id: string; item?: ReplayItem }) {
       </section>
       {isShow && !show && !failed && <div className="spinner big" style={{ margin: '40px auto' }} />}
       {seasons.length > 1 && (
-        <div className="chips" data-row>
+        <div className="chips" data-row data-tabs>
           {seasons.map((s, k) => (
             <button key={k} data-f className={`chip ${k === season ? 'active' : ''}`} onClick={() => setSeason(k)}>
               {s.title}

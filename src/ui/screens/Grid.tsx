@@ -57,7 +57,7 @@ export function Grid({ kind, title, filter }: { kind: 'movie' | 'series'; title:
     <div style={{ paddingBottom: 40 }}>
       <PageHeader title={title} right={shown ? <span className="dim small">{shown.length}</span> : undefined} />
       {subs.length > 1 && (
-        <div className="chips sub-chips" data-row>
+        <div className="chips sub-chips" data-row data-tabs>
           <button data-f className={`chip ${!sub ? 'active' : ''}`} onClick={() => setSub(null)}>
             {t('replay.all')}
           </button>
@@ -68,7 +68,7 @@ export function Grid({ kind, title, filter }: { kind: 'movie' | 'series'; title:
           ))}
         </div>
       )}
-      <div className="chips" data-row>
+      <div className="chips" data-row data-tabs>
         {SORTS.map((s) => (
           <button key={s} data-f className={`chip ${sort === s ? 'active' : ''}`} onClick={() => setSort(s)}>
             {SORT_LABEL[s][profile.lang]}

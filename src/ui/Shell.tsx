@@ -37,6 +37,16 @@ export function Shell() {
   const mobile = narrow && !isTvMode();
   const [solid, setSolid] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
+  // the tab on screen lags one frame behind the chosen one: a loader is painted first, then the
+  // (sometimes heavy) screen mounts — switching TV → films no longer freezes without feedback
+  const [shownTab, setShownTab] = useState(tab);
+  useEffect(() => {
+    if (shownTab === tab) return;
+    let f2 = 0;
+    const f1 = requestAnimationFrame(() => (f2 = requestAnimationFrame(() => setShownTab(tab))));
+    return () => (cancelAnimationFrame(f1), cancelAnimationFrame(f2));
+  }, [tab, shownTab]);
+  const switching = shownTab !== tab;
 
   useEffect(() => {
     document.documentElement.classList.toggle('mobile', mobile);
@@ -53,12 +63,14 @@ export function Shell() {
       const scope = document.querySelector<HTMLElement>('.stack-page:last-of-type') || pageRef.current;
       if (!scope) return;
       if (scope.contains(document.activeElement)) return;
+      // a tab opened from the tab bar keeps the focus there (moving along the bar opens each tab)
+      if (!route && document.activeElement?.closest('.topnav')) return;
       if (scope.querySelector('[data-f]')) focusFirst(scope);
       else if (tries++ < 30) timer = window.setTimeout(tick, 50);
     };
     let timer = window.setTimeout(tick, 16);
     return () => clearTimeout(timer);
-  }, [tab, route, player]);
+  }, [shownTab, route, player]);
 
   useEffect(() => {
     const el = pageRef.current;
@@ -71,16 +83,22 @@ export function Shell() {
   return (
     <div className="app-shell" aria-hidden={!!player} inert={player ? true : undefined}>
       {!mobile && <TopNav tab={tab} setTab={setTab} solid={solid || !!route || tab !== 'home'} />}
-      <div className={`page page-${tab}`} ref={pageRef} key={tab} inert={route ? true : undefined}>
-        {mobile && <MobileTop tab={tab} />}
+      <div className={`page page-${shownTab}`} ref={pageRef} key={shownTab} inert={route ? true : undefined}>
+        {mobile && <MobileTop tab={shownTab} />}
         <ErrorBoundary onReset={() => setTab('home')}>
         <Suspense fallback={<div className="empty"><div className="spinner big" style={{ margin: 'auto' }} /></div>}>
-          {tab === 'home' && <Home />}
-          {tab === 'search' && <Search />}
-          {tab === 'tv' && <LiveTv />}
-          {tab === 'replay' && <Replay />}
-          {tab === 'myvideos' && <MyVideos />}
-          {tab === 'settings' && <Settings />}
+          {switching ? (
+            <div className="tab-loading"><div className="spinner big" /></div>
+          ) : (
+            <>
+              {shownTab === 'home' && <Home />}
+              {shownTab === 'search' && <Search />}
+              {shownTab === 'tv' && <LiveTv />}
+              {shownTab === 'replay' && <Replay />}
+              {shownTab === 'myvideos' && <MyVideos />}
+              {shownTab === 'settings' && <Settings />}
+            </>
+          )}
         </Suspense>
         </ErrorBoundary>
       </div>
@@ -108,10 +126,11 @@ function TopNav({ tab, setTab, solid }: { tab: TabId; setTab: (t: TabId) => void
   const profile = useApp((s) => s.profile)!;
   return (
     <header className={`topnav ${solid ? 'solid' : ''}`}>
-      <button data-f onClick={() => setTab('home')} aria-label="home" style={{ borderRadius: 4 }}>
+      {/* the logo is not a remote stop: "Accueil" is right next to it */}
+      <button onClick={() => setTab('home')} aria-label="home" tabIndex={-1} style={{ borderRadius: 4 }}>
         <Logo />
       </button>
-      <nav data-row>
+      <nav data-row data-tabs>
         {TABS.filter((x) => x.id !== 'search').map((x) => (
           <button key={x.id} data-f className={`navlink ${tab === x.id ? 'active' : ''}`} onClick={() => setTab(x.id)}>
             {x.label()}

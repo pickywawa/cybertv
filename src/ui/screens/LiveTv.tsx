@@ -149,7 +149,7 @@ export function LiveTv() {
   return (
     <div className="tab-tv">
       <div className="tv-head">
-        <div className="tabs" data-row>
+        <div className="tabs" data-row data-tabs>
           {(['now', 'tonight'] as const).map((m) => (
             <button key={m} data-f className={`tab ${mode === m ? 'active' : ''}`} onClick={() => setMode(m)}>
               {m === 'now' ? t('tv.now') : t('tv.tonight')}
@@ -161,9 +161,9 @@ export function LiveTv() {
         </button>
       </div>
       <div className="chips-bar">
-        <div className="chips" data-row>
+        <div className="chips" data-row data-tabs>
           {langChannels?.choices.map((l) => (
-            <button key={l} data-f className={`chip lang-chip ${onlyLang === l ? 'active' : ''}`} onClick={() => setOnlyLang(onlyLang === l ? null : l)} title={langName(l)}>
+            <button key={l} data-f data-noauto className={`chip lang-chip ${onlyLang === l ? 'active' : ''}`} onClick={() => setOnlyLang(onlyLang === l ? null : l)} title={langName(l)}>
               {flagOf(l)} {l.toUpperCase()}
             </button>
           ))}

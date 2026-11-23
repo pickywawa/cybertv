@@ -521,7 +521,8 @@ export function Player({ req }: { req: PlayRequest }) {
       }
       if (panel) return false;
       if (!uiVisible) {
-        if (k === 'ArrowUp' && mode !== 'vod') return zapBy(-1), true;
+        // up opens the action bar (focus on play/pause); down zaps to the next channel on live TV
+        if (k === 'ArrowUp') return poke(), true;
         if (k === 'ArrowDown' && mode !== 'vod') return zapBy(1), true;
         if (k === 'ArrowLeft') return seekBy(-10), poke(), true;
         if (k === 'ArrowRight') return seekBy(10), poke(), true;

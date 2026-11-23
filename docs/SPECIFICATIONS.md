@@ -612,6 +612,16 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
 - **Plus de retéléchargement après la configuration** : le profil est relu en base à l'ouverture (il avait la date de synchro d'avant), et une synchro complète marque les migrations ponctuelles comme faites.
 - **Lancement abandonné** : Retour pendant le chargement annule la lecture demandée ; après 25 s, message « La lecture ne démarre pas » ; une réponse tardive n'ouvre plus le lecteur au milieu d'un autre écran.
 
+### V1.15 — Navigation à la télécommande simplifiée
+
+- Le logo n'est plus un arrêt de la navigation.
+- **Rangées d'onglets** (`[data-row][data-tabs]` : barre principale, Maintenant / Ce soir, catégories de chaînes, tris et genres des grilles, filtres Replay, saisons, Épisodes / Similaires) :
+  - l'onglet qui a le focus prend la couleur principale en fond (plus de cadre) ; l'onglet courant garde un fond gris quand le focus est ailleurs ;
+  - en remontant ou en descendant dans une rangée d'onglets, le focus va sur l'onglet courant (et non le premier) ; en descendant depuis « Maintenant », c'est la catégorie courante (« Toutes les chaînes » par défaut) ;
+  - un onglet atteint avec gauche / droite s'ouvre seul après 350 ms (pas besoin d'OK) ; les boutons-bascules (langue des chaînes) demandent toujours OK ; le focus reste dans la barre principale quand un onglet s'ouvre ainsi.
+- **Changement d'onglet** : un indicateur de chargement est affiché d'abord, puis l'écran (parfois lourd, ex. Films) est monté.
+- **Lecteur** : flèche haut ouvre la barre d'actions (focus sur lecture / pause) ; bas y sélectionne la barre de progression, qui n'a plus de cadre (curseur agrandi, couleur principale) ; les boutons sélectionnés deviennent un rond plein de la couleur principale. Sur le direct, bas (barre masquée) passe toujours à la chaîne suivante.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

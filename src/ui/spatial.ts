@@ -4,6 +4,9 @@
  *  - rows:   [data-row]   left/right stays inside the row first, rows remember their last focus
  *  - scope:  [data-scope] the last mounted scope traps focus (modals, player overlay)
  *  - long press on OK: elements with [data-lp] receive a `longpress` CustomEvent
+ *  - tab rows: [data-row][data-tabs]  entering one focuses its current tab (`.active`), and a tab
+ *    reached with left/right is opened by itself after a short pause (no OK needed);
+ *    [data-noauto] items (toggles) still need OK
  */
 type Dir = 'up' | 'down' | 'left' | 'right';
 
@@ -53,6 +56,24 @@ export function focusFirst(root: Element = currentScope()) {
   if (auto && visible(auto)) return focusEl(auto);
   const list = focusables(root);
   if (list.length) focusEl(list[0]);
+}
+
+/** current tab of a tab row */
+function currentTab(row: Element): HTMLElement | null {
+  const el = row.querySelector<HTMLElement>('[data-f].active:not([data-noauto])');
+  return el && visible(el) ? el : null;
+}
+
+let autoTimer: number | null = null;
+/** a tab focused with the remote opens after a short pause (passing over tabs doesn't load each) */
+function autoSelect(el: HTMLElement) {
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer = null;
+  if (!el.closest('[data-tabs]') || el.hasAttribute('data-noauto') || el.classList.contains('active')) return;
+  autoTimer = window.setTimeout(() => {
+    autoTimer = null;
+    if (document.activeElement === el && el.isConnected) el.click();
+  }, 350);
 }
 
 function center(r: DOMRect) {
@@ -115,6 +136,7 @@ export function move(dir: Dir): boolean {
     const t = best(active, inRow, dir);
     if (t) {
       focusEl(t);
+      autoSelect(t);
       return true;
     }
     if (row.hasAttribute('data-row-lock')) return true;
@@ -125,7 +147,9 @@ export function move(dir: Dir): boolean {
   // 2. entering a row: restore its remembered item
   if (target) {
     const trow = target.closest('[data-row]');
-    if (trow && trow !== row && (dir === 'up' || dir === 'down')) {
+    const cur = trow && trow !== row && trow.hasAttribute('data-tabs') ? currentTab(trow) : null;
+    if (cur) target = cur;
+    else if (trow && trow !== row && (dir === 'up' || dir === 'down')) {
       const remembered = lastInRow.get(trow);
       if (remembered && remembered.isConnected && visible(remembered)) {
         const rr = remembered.getBoundingClientRect();

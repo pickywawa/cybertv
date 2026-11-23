@@ -241,3 +241,62 @@ export function channelLangs(rawName: string, catName?: string, epgId?: string, 
   if (country && COUNTRY_DEFAULT_LANG[country]) return [COUNTRY_DEFAULT_LANG[country]];
   return [];
 }
+
+// ─────────── provider categories by language (download only the user's languages) ───────────
+
+/** country / language tags seen in provider category names → language */
+const CAT_TAG: Record<string, string> = {
+  ...COUNTRY_LANG,
+  al: 'sq', bg: 'bg', hu: 'hu', ro: 'ro', dk: 'da', da: 'da', no: 'no', fi: 'fi', is: 'is', se: 'sv', sw: 'sv', gr: 'el', cz: 'cs', sk: 'sk',
+  ua: 'uk', il: 'he', ir: 'fa', pk: 'ur', exyu: 'sr', yu: 'sr', hr: 'hr', rs: 'sr', ba: 'bs', mk: 'mk', si: 'sl', lt: 'lt', lv: 'lv', ee: 'et',
+  th: 'th', vn: 'vi', ph: 'tl', id: 'id', my: 'ms', ku: 'ku', kurd: 'ku', am: 'hy', ge: 'ka', az: 'az', alb: 'sq', ru: 'ru', rus: 'ru',
+};
+const SCRIPT_LANG: [RegExp, string][] = [
+  [/[؀-ۿ]/, 'ar'],
+  [/[Ѐ-ӿ]/, 'ru'],
+  [/[Ͱ-Ͽ]/, 'el'],
+  [/[֐-׿]/, 'he'],
+  [/[ऀ-ॿ]/, 'hi'],
+  [/[฀-๿]/, 'th'],
+  [/[぀-ヿ]/, 'ja'],
+  [/[가-힯]/, 'ko'],
+  [/[一-鿿]/, 'zh'],
+];
+const CAT_WORDS: [RegExp, string][] = [
+  ...WORD_LANG,
+  [/\b(albania|bulgaria|hungaria|hungary|romania|danmark|dansk|denmark|norway|norge|finland|suomi|iceland|sweden|sverige|greece|czech|slovak|ukraine|israel|iran|persian|pakistan|punjabi|india|hindi|bollywood|tamil|telugu|kurdish|armenia|georgia|russia|russian|somalia|afghan)\b/, '?'],
+];
+
+/**
+ * Languages a provider category is in ("COMEDIE [FR]" → fr, "KOMEDIE [NL]" → nl, "أفلام عربية" → ar).
+ * Empty when nothing says it (kept: "NETFLIX [MULTISUB]", "TOP 500 IMDB"…).
+ */
+export function categoryLangs(name: string): string[] {
+  const out = new Set<string>();
+  const up = name.toUpperCase();
+  if (/\bMULTI(SUB|LANG|AUDIO)?\b/.test(up)) out.add('multi');
+  for (const m of name.matchAll(/[[(|]\s*([A-Za-z]{2,5})\s*[\])|]/g)) {
+    const l = CAT_TAG[m[1].toLowerCase()];
+    if (l) out.add(l);
+  }
+  const pre = name.match(/^\s*([A-Za-z]{2,5})\s*[:|\-–]\s/);
+  if (pre && CAT_TAG[pre[1].toLowerCase()]) out.add(CAT_TAG[pre[1].toLowerCase()]);
+  for (const [re, l] of SCRIPT_LANG) if (re.test(name)) out.add(l);
+  if (!out.size) {
+    const n = ' ' + norm(name) + ' ';
+    for (const [re, l] of CAT_WORDS) {
+      const m = n.match(re);
+      if (!m) continue;
+      out.add(l === '?' ? `x-${m[1]}` : l);
+      break;
+    }
+  }
+  return [...out];
+}
+
+/** a category is downloaded when it is in one of `langs`, multi-language, or says nothing */
+export function keepCategory(name: string, langs: string[]): boolean {
+  const l = categoryLangs(name);
+  if (!l.length || l.includes('multi')) return true;
+  return l.some((x) => langs.includes(x));
+}

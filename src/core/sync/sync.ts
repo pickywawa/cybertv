@@ -7,8 +7,9 @@ import {
   channelGroupKey, cleanName, detectQuality, detectUniverse, movieGroupKey, norm, parseEpisode, parseTitleYear, seriesGroupKey,
 } from '../util/text';
 import { parseXmltv, type XmltvChannel } from '../epg/xmltv';
-import { channelCountry, channelLangs, detectLangs } from '../util/lang';
+import { channelCountry, channelLangs, detectLangs, keepCategory } from '../util/lang';
 import { serversOf, serverLabel } from '../sources/servers';
+import { langPrefs } from '../prefs';
 import { IPTV_ORG, applyIptvOrg, refreshIptvOrg } from './iptvorg';
 
 export type Progress = (p: SyncProgress) => void;
@@ -106,6 +107,53 @@ function catUniverse(cats: Map<string, Category>, id?: string): Universe | undef
 
 // ───────────────────────────── Xtream ─────────────────────────────
 
+/** the profile's audio languages when the catalogue is limited to them (null: everything) */
+async function catalogLangs(profileId: string): Promise<string[] | null> {
+  const p = await db.profiles.get(profileId);
+  if (!p || p.catalogAllLangs) return null;
+  return langPrefs(p).audio;
+}
+
+/**
+ * Streams of the kept categories only: one request per category (much less to download and save
+ * when most of a catalogue is in other languages), or the whole list filtered when that is simpler.
+ */
+async function listFor(cats: unknown, keep: Set<string> | null, all: () => Promise<any>, one: (id: string) => Promise<any>): Promise<any> {
+  const ids = asArray<any>(cats).map((c) => String(c.category_id));
+  const onlyKept = (r: any) => (Array.isArray(r) && keep ? r.filter((s) => keep.has(String(s?.category_id))) : r);
+  if (!keep || !ids.length || keep.size >= ids.length) return all();
+  const kept = ids.filter((i) => keep.has(i));
+  if (kept.length > 40) return onlyKept(await all());
+  try {
+    const out: any[] = [];
+    for (let i = 0; i < kept.length; i += 4) {
+      const part = await Promise.all(kept.slice(i, i + 4).map((id) => one(id)));
+      for (const p of part) {
+        // a panel that ignores category_id would send everything again: plain list then
+        if (!Array.isArray(p)) throw new Error('bad list');
+        out.push(...p);
+      }
+    }
+    return out;
+  } catch {
+    return onlyKept(await all());
+  }
+}
+
+/** rows of categories no longer downloaded (other languages) */
+async function dropOtherCategories(table: any, sourceId: string, keptCats: Set<string>, field: 'categoryId' | 'id' = 'categoryId') {
+  const ids: string[] = await table.where('sourceId').equals(sourceId).filter((r: any) => !!r[field] && !keptCats.has(r[field])).primaryKeys();
+  for (let i = 0; i < ids.length; i += BATCH) await table.bulkDelete(ids.slice(i, i + BATCH));
+}
+
+/** ids of the categories to download (null: all of them, also when none would be left) */
+function keptIds(cats: unknown, langs: string[] | null): Set<string> | null {
+  if (!langs?.length) return null;
+  const kept = new Set(asArray<any>(cats).filter((c) => keepCategory(String(c.category_name || ''), langs)).map((c) => String(c.category_id)));
+  return kept.size ? kept : null;
+}
+const keptCat = (keep: Set<string> | null) => (c: any) => !keep || keep.has(String(c.category_id));
+
 async function syncXtream(src: Source, password: string, progress: Progress) {
   const x = new XtreamClient({ server: src.url, username: src.username!, password });
   const acc = await x.account();
@@ -113,18 +161,22 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   const { auth: _a, ...account } = acc;
   src.account = account;
   const firstSync = !src.lastSyncAt;
-  // the six lists download together (the big film / series lists take minutes on a TV box);
+  // categories first: with "my languages only", only their streams are downloaded
+  const langs = await catalogLangs(src.profileId);
+  const [lcats, vcats, scats] = await Promise.all([x.liveCategories(), x.vodCategories().catch(() => []), x.seriesCategories().catch(() => [])]);
+  const keepLive = keptIds(lcats, langs);
+  const keepVod = keptIds(vcats, langs);
+  const keepSeries = keptIds(scats, langs);
+  // the lists download together (the big film / series lists take minutes on a TV box);
   // they are then processed one after the other so the screens fill in order
   const dl = {
-    vcats: x.vodCategories().catch(() => []),
-    vstreams: x.vodStreams().catch(() => null),
-    scats: x.seriesCategories().catch(() => []),
-    slist: x.series().catch(() => null),
+    vstreams: listFor(vcats, keepVod, () => x.vodStreams(), (id) => x.vodStreams(id)).catch(() => null),
+    slist: listFor(scats, keepSeries, () => x.series(), (id) => x.series(id)).catch(() => null),
   };
 
   // LIVE
   progress({ sourceId: src.id, step: 'live' });
-  const [lcats, lstreamsRaw] = await Promise.all([x.liveCategories(), x.liveStreams()]);
+  const lstreamsRaw = await listFor(lcats, keepLive, () => x.liveStreams(), (id) => x.liveStreams(id));
   const lstreams = xtreamList(lstreamsRaw, 'stream_id');
   if (lstreams) progress({ sourceId: src.id, step: 'live', done: 0, total: lstreams.length });
   if (!lstreams) throw new Error('Liste des chaînes invalide');
@@ -132,7 +184,7 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
   const catRows: Category[] = [];
   const rawCat = new Map<string, string>();
   for (const c of [...asArray<any>(lcats)]) rawCat.set(`${src.id}:lc:${c.category_id}`, c.category_name || '');
-  asArray<any>(lcats).forEach((c, i) => {
+  asArray<any>(lcats).filter(keptCat(keepLive)).forEach((c, i) => {
     const row: Category = {
       id: `${src.id}:lc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'live',
       name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
@@ -159,17 +211,18 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     });
   await bulkPutBatched(db.categories, catRows);
   await bulkPutBatched(db.channels, channels, (done, total) => progress({ sourceId: src.id, step: 'live', done, total }));
+  if (keepLive) await dropOtherCategories(db.channels, src.id, new Set([...keepLive].map((id) => `${src.id}:lc:${id}`)));
   await pruneStale(db.channels, src.id, new Set(channels.map((c) => c.id)));
   progress({ sourceId: src.id, step: 'live', count: channels.length });
 
   // VOD
   progress({ sourceId: src.id, step: 'vod' });
   // a failed or invalid answer skips movies for this sync (never "zero movies": that would wipe them)
-  const [vcats, vstreamsRaw] = await Promise.all([dl.vcats, dl.vstreams]);
+  const vstreamsRaw = await dl.vstreams;
   const vstreams = xtreamList(vstreamsRaw, 'stream_id');
   if (vstreams) progress({ sourceId: src.id, step: 'vod', done: 0, total: vstreams.length });
   const vodOk = !!vstreams;
-  const vcatRows: Category[] = asArray<any>(vcats).map((c, i) => ({
+  const vcatRows: Category[] = asArray<any>(vcats).filter(keptCat(keepVod)).map((c, i) => ({
     id: `${src.id}:vc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'vod',
     name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
   }));
@@ -194,17 +247,18 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     await mergeExisting(db.movies, src.id, movies, firstSync);
     await bulkPutBatched(db.categories, vcatRows);
     await bulkPutBatched(db.movies, movies, (done, total) => progress({ sourceId: src.id, step: 'vod', done, total }));
+    if (keepVod) await dropOtherCategories(db.movies, src.id, new Set([...keepVod].map((id) => `${src.id}:vc:${id}`)));
     await pruneStale(db.movies, src.id, new Set(movies.map((m) => m.id)));
   }
   progress({ sourceId: src.id, step: 'vod', count: vodOk ? movies.length : await db.movies.where('sourceId').equals(src.id).count() });
 
   // SERIES
   progress({ sourceId: src.id, step: 'series' });
-  const [scats, slistRaw] = await Promise.all([dl.scats, dl.slist]);
+  const slistRaw = await dl.slist;
   const slist = xtreamList(slistRaw, 'series_id');
   if (slist) progress({ sourceId: src.id, step: 'series', done: 0, total: slist.length });
   const seriesOk = !!slist;
-  const scatRows: Category[] = asArray<any>(scats).map((c, i) => ({
+  const scatRows: Category[] = asArray<any>(scats).filter(keptCat(keepSeries)).map((c, i) => ({
     id: `${src.id}:sc:${c.category_id}`, sourceId: src.id, profileId: src.profileId, kind: 'series',
     name: cleanName(c.category_name || ''), universe: detectUniverse(c.category_name), order: i,
   }));
@@ -231,9 +285,15 @@ async function syncXtream(src: Source, password: string, progress: Progress) {
     await mergeExisting(db.series, src.id, series, firstSync);
     await bulkPutBatched(db.categories, scatRows);
     await bulkPutBatched(db.series, series, (done, total) => progress({ sourceId: src.id, step: 'series', done, total }));
+    if (keepSeries) await dropOtherCategories(db.series, src.id, new Set([...keepSeries].map((id) => `${src.id}:sc:${id}`)));
     await pruneStale(db.series, src.id, new Set(series.map((m) => m.id)));
   }
-  if (vodOk && seriesOk) await pruneStale(db.categories, src.id, new Set([...catRows, ...vcatRows, ...scatRows].map((c) => c.id)));
+  if (vodOk && seriesOk) {
+    const keepCats = new Set([...catRows, ...vcatRows, ...scatRows].map((c) => c.id));
+    // categories of other languages go whatever their number (the safety check is for broken answers)
+    if (langs) await dropOtherCategories(db.categories, src.id, keepCats, 'id');
+    else await pruneStale(db.categories, src.id, keepCats);
+  }
   src.counts = {
     live: channels.length,
     vod: vodOk ? movies.length : await db.movies.where('sourceId').equals(src.id).count(),
@@ -279,8 +339,12 @@ export async function loadXtreamEpisodes(seriesId: string, password: string): Pr
 
 // ───────────────────────────── M3U ─────────────────────────────
 
-async function syncM3u(src: Source, progress: Progress) {
+async function syncM3u(src: Source, progress: Progress, allLangs = false) {
   const firstSync = !src.lastSyncAt;
+  // groups in other languages are skipped (unless the profile wants everything)
+  const langs = allLangs ? null : await catalogLangs(src.profileId);
+  const groupOk = new Map<string, boolean>();
+  let skipped = 0;
   progress({ sourceId: src.id, step: 'live', message: 'Téléchargement de la playlist' });
   const stream = await fetchTextStream(src.url, 300000);
 
@@ -304,6 +368,14 @@ async function syncM3u(src: Source, progress: Progress) {
   const onEntry = (e: M3uEntry) => {
     const kind = classifyEntry(e);
     const group = e.attrs['group-title'] || '';
+    if (langs && group) {
+      let ok = groupOk.get(group);
+      if (ok === undefined) groupOk.set(group, (ok = keepCategory(group, langs)));
+      if (!ok) {
+        skipped++;
+        return;
+      }
+    }
     const logo = e.attrs['tvg-logo'] || undefined;
     if (kind === 'live') {
       const c = catFor('live', group);
@@ -365,6 +437,8 @@ async function syncM3u(src: Source, progress: Progress) {
     if (++n % 50000 === 0) progress({ sourceId: src.id, step: 'live', message: `${parser.count} entrées lues` });
   }
   if (!parser.count) throw new Error('Playlist vide ou invalide');
+  // nothing left in the profile's languages: the whole playlist rather than an empty app
+  if (skipped && !channels.length && !movies.length && !seriesMap.size) return syncM3u(src, progress, true);
   await setMeta(`epg:auto:${src.id}`, parser.header.epgUrls);
 
   const series = [...seriesMap.values()];
@@ -376,11 +450,13 @@ async function syncM3u(src: Source, progress: Progress) {
   await bulkPutBatched(db.movies, movies, (done, total) => progress({ sourceId: src.id, step: 'vod', done, total }));
   await bulkPutBatched(db.series, series, (done, total) => progress({ sourceId: src.id, step: 'series', done, total }));
   await bulkPutBatched(db.episodes, episodes);
-  await pruneStale(db.categories, src.id, new Set(catRows.map((c) => c.id)));
-  await pruneStale(db.channels, src.id, new Set(channels.map((c) => c.id)));
-  await pruneStale(db.movies, src.id, new Set(movies.map((c) => c.id)));
-  await pruneStale(db.series, src.id, new Set(series.map((c) => c.id)));
-  await pruneStale(db.episodes, src.id, new Set(episodes.map((c) => c.id)));
+  // rows of skipped groups go whatever their number (the safety check is for broken playlists)
+  const prune = (table: any, keep: Set<string>) => (skipped ? dropOtherCategories(table, src.id, keep, 'id') : pruneStale(table, src.id, keep));
+  await prune(db.categories, new Set(catRows.map((c) => c.id)));
+  await prune(db.channels, new Set(channels.map((c) => c.id)));
+  await prune(db.movies, new Set(movies.map((c) => c.id)));
+  await prune(db.series, new Set(series.map((c) => c.id)));
+  await prune(db.episodes, new Set(episodes.map((c) => c.id)));
   src.counts = { live: channels.length, vod: movies.length, series: series.length };
   progress({ sourceId: src.id, step: 'live', count: channels.length });
   progress({ sourceId: src.id, step: 'vod', count: movies.length });
@@ -608,15 +684,21 @@ export async function syncSource(src: Source, password: string | undefined, prog
   return src;
 }
 
+const IPTV_ORG_KEY = 'iptvorg:index';
+
 export async function syncProfile(profileId: string, secrets: Record<string, string | undefined>, progress: Progress, withEpg = true) {
   const sources = (await db.sources.where('profileId').equals(profileId).toArray()).filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
+  // open channel database (logos, ranking, languages, countries; weekly download): fetched while
+  // the sources download, applied after them — the channel list must not show providers' logos
+  const org = refreshIptvOrg(false, true).catch(() => false);
   for (const s of sources) await syncSource(s, secrets[s.id], progress);
-  // open channel database: logos, languages, countries (weekly download, applied after every sync)
+  progress({ step: 'logos' });
   try {
-    await refreshIptvOrg();
-    await applyIptvOrg(profileId);
+    if ((await org) === false && !(await getMeta(IPTV_ORG_KEY))) await refreshIptvOrg(true);
+    progress({ step: 'logos', count: await applyIptvOrg(profileId) });
   } catch {
     /* offline: next sync */
+    progress({ step: 'logos', count: 0 });
   }
   if (withEpg) await syncEpg(profileId, secrets, progress);
   // channels were rewritten: versions without a guide id take their sibling's again

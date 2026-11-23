@@ -82,6 +82,12 @@ export async function boot() {
 
 /** Back from remote / Escape / Android back button */
 export function handleBack(hardware: boolean): boolean {
+  // Back while a video is starting: that launch is abandoned (it must not open later on its own)
+  const st = useApp.getState();
+  if (st.launching && !st.player) {
+    window.dispatchEvent(new Event('cyber:launch-cancel'));
+    return true;
+  }
   if (document.querySelector('[data-sheet]')) {
     window.dispatchEvent(new Event('cyber:back'));
     return true;
@@ -139,6 +145,9 @@ async function applyImportLink(p: EnrollPayload) {
 
 export async function selectProfile(p: Profile) {
   const s = useApp.getState();
+  // the stored profile: the one passed may predate a sync that just ended (first setup), and its
+  // missing lastSyncAt would download the whole catalogue again
+  p = (await db.profiles.get(p.id)) || p;
   setLang(p.lang);
   applyTheme(p.theme, p.accent, s.settings.performance);
   s.setProfile(p);
@@ -284,6 +293,9 @@ export async function runSync(profileId: string, withEpg = true, opts: { quiet?:
       withEpg,
     );
     const prof = await db.profiles.get(profileId);
+    // a full sync makes the one-time migrations useless
+    await setMeta(`schema:resync:v5:${profileId}`, true);
+    if (withEpg) await setMeta(`schema:epgfill:v2:${profileId}`, true);
     if (prof && useApp.getState().profile?.id === profileId) {
       useApp.getState().patchProfile({ lastSyncAt: prof.lastSyncAt });
       // right after a first sync the device is busy (search index, first screens): TMDB waits a bit

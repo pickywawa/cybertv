@@ -37,11 +37,12 @@ const CAT_UNIVERSE: Record<string, Universe> = {
 };
 
 /** downloads and compacts the database (weekly) */
-export async function refreshIptvOrg(force = false): Promise<boolean> {
+export async function refreshIptvOrg(force = false, alongside = false): Promise<boolean> {
   const at = (await getMeta<number>(KEY_AT)) || 0;
   if (!force && Date.now() - at < 7 * 86400000 && (await getMeta(KEY))) return false;
   // a copy downloaded in the background since the last refresh is used when available
-  setPrefetchSince(at);
+  // (not while the sources download alongside: the setting is shared by every request)
+  if (!alongside) setPrefetchSince(at);
   let channels: any[], logos: any[], feeds: any[];
   try {
     [channels, logos, feeds] = await Promise.all([
@@ -50,7 +51,7 @@ export async function refreshIptvOrg(force = false): Promise<boolean> {
       fetchJson<any[]>(IPTV_ORG.feeds, 120000),
     ]);
   } finally {
-    setPrefetchSince(null);
+    if (!alongside) setPrefetchSince(null);
   }
   // best logo per channel: in use, main feed (no feed id), PNG/SVG, widest
   const logo = new Map<string, { url: string; score: number }>();

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { t, setLang } from '@/core/i18n';
 import type { Lang, Profile } from '@/core/types';
 import { COLORS, EMOJIS, createProfile, saveSource, setTmdbToken } from '@/core/profiles';
@@ -257,7 +257,7 @@ function SyncStep({ profile }: { profile: Profile }) {
   }, []);
   useEffect(() => {
     const p = sync.progress;
-    if (!p || !['live', 'vod', 'series', 'epg'].includes(p.step)) return;
+    if (!p || !['live', 'vod', 'series', 'logos', 'epg'].includes(p.step)) return;
     setSteps((all) => {
       const cur = { ...(all[p.step] || {}) };
       if (p.total !== undefined) {
@@ -274,9 +274,19 @@ function SyncStep({ profile }: { profile: Profile }) {
     });
   }, [sync.progress]);
   const active = sync.running ? sync.progress?.step : undefined;
-  const order = ['live', 'vod', 'series', 'epg'] as const;
+  const order = ['live', 'vod', 'series', 'logos', 'epg'] as const;
   const activeIdx = order.indexOf(active as (typeof order)[number]);
-  const ready = steps.live?.count !== undefined || (!sync.running && sync.progress);
+  // blocking: the app opens once everything it needs is saved (a half-filled first start
+  // downloaded the rest again behind the user's back)
+  const finished = !sync.running && !!sync.progress;
+  const enter = () => (useApp.setState({ importedProfile: undefined }), void selectProfile(profile));
+  const entered = useRef(false);
+  useEffect(() => {
+    if (finished && !sync.lastError && !entered.current) {
+      entered.current = true;
+      enter();
+    }
+  }, [finished, sync.lastError]);
   const nf = new Intl.NumberFormat();
   return (
     <div className="form sync-step">
@@ -298,7 +308,7 @@ function SyncStep({ profile }: { profile: Profile }) {
             if (rate > 0) left = t('sync.left', { t: fmtSecs((st.total - (st.done || 0)) / rate) });
           } else if (isActive && s === 'epg' && st.count) detail = t('sync.programs', { n: nf.format(st.count) });
           else if (isActive) detail = t('sync.downloading');
-          else if (done && st.count !== undefined) detail = nf.format(st.count);
+          else if (done && st.count !== undefined) detail = s === 'logos' ? '' : nf.format(st.count);
           return (
             <div key={s} className={`list-item sync-row ${isActive ? 'on' : ''}`}>
               {isActive ? <span className="spinner" /> : done ? <IcCheck width={20} height={20} color="var(--ok)" /> : <span style={{ width: 20 }} />}
@@ -320,9 +330,12 @@ function SyncStep({ profile }: { profile: Profile }) {
       </div>
       {sync.lastError && <p className="msg-ko">{sync.lastError}</p>}
       <p className="small dim">{t('sync.longHint')}</p>
-      <button className="btn primary" data-f data-autofocus disabled={!ready} onClick={() => (useApp.setState({ importedProfile: undefined }), void selectProfile(profile))}>
-        {t('onboard.start')}
-      </button>
+      {finished && sync.lastError && (
+        <div className="btn-row" data-row>
+          <button className="btn primary" data-f data-autofocus onClick={enter}>{t('onboard.start')}</button>
+          <button className="btn" data-f onClick={() => void runSync(profile.id)}>{t('common.retry')}</button>
+        </div>
+      )}
     </div>
   );
 }

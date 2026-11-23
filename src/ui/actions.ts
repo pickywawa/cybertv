@@ -33,26 +33,44 @@ export function openChannel(id: string) {
   useApp.getState().push({ name: 'channel', id });
 }
 
-/** shows the launching screen at once, until the player opens (or the request fails) */
-async function launching<T>(fn: () => Promise<T>): Promise<T> {
-  const st = useApp.getState();
-  st.setLaunching(true);
-  // safety: never stuck on it (age gate PIN, error…)
-  const tm = window.setTimeout(() => useApp.getState().setLaunching(false), 20000);
+let launchSeq = 0;
+/** abandons the launch in progress: its answer, however late, is ignored */
+function cancelLaunch() {
+  launchSeq++;
+  useApp.getState().setLaunching(false);
+}
+window.addEventListener('cyber:launch-cancel', cancelLaunch);
+
+/**
+ * Shows the launching screen at once, until the player opens (or the request fails).
+ * `ok()` tells the flow whether it is still wanted: after Back, the time limit or another launch,
+ * a slow answer must not open the player in the middle of something else.
+ */
+async function launching(fn: (ok: () => boolean) => Promise<void>): Promise<void> {
+  const id = ++launchSeq;
+  const ok = () => id === launchSeq;
+  useApp.getState().setLaunching(true);
+  const tm = window.setTimeout(() => {
+    if (!ok() || useApp.getState().player) return;
+    cancelLaunch();
+    useApp.getState().toast(t('player.launchTimeout'));
+  }, 25000);
   try {
-    return await fn();
+    await fn(ok);
+  } catch (e) {
+    if (ok()) throw e;
   } finally {
     clearTimeout(tm);
-    if (!useApp.getState().player) useApp.getState().setLaunching(false);
+    if (ok() && !useApp.getState().player) useApp.getState().setLaunching(false);
   }
 }
 
 export async function playChannel(ch: Channel, opts: { program?: Program; fromStart?: boolean; zapList?: string[] } = {}) {
-  if (!useApp.getState().player) return launching(() => playChannelNow(ch, opts));
+  if (!useApp.getState().player) return launching((ok) => playChannelNow(ch, opts, ok));
   return playChannelNow(ch, opts);
 }
 
-async function playChannelNow(ch: Channel, opts: { program?: Program; fromStart?: boolean; zapList?: string[] }) {
+async function playChannelNow(ch: Channel, opts: { program?: Program; fromStart?: boolean; zapList?: string[] }, ok: () => boolean = () => true) {
   const st = useApp.getState();
   if (ch.universe === 'adult' && st.profile?.parental.enabled && !st.unlockedAdult) {
     useApp.getState().setLaunching(false);
@@ -60,22 +78,24 @@ async function playChannelNow(ch: Channel, opts: { program?: Program; fromStart?
     return;
   }
   const r = await playChannelRequest(ch, opts.program, opts.fromStart);
-  st.play({ ...r, zapList: opts.zapList });
+  if (ok()) st.play({ ...r, zapList: opts.zapList });
 }
 
 export async function playMovie(id: string, startAt?: number) {
-  await ageGate('movie', id, () => launching(async () => {
+  await ageGate('movie', id, () => launching(async (ok) => {
     const m = await db.movies.get(id);
     if (!m) return;
-    useApp.getState().play(await playMovieRequest(m, startAt));
+    const r = await playMovieRequest(m, startAt);
+    if (ok()) useApp.getState().play(r);
   }));
 }
 
 export async function playEpisode(seriesId: string, episodeId: string, startAt?: number) {
-  await ageGate('series', seriesId, () => launching(async () => {
+  await ageGate('series', seriesId, () => launching(async (ok) => {
     const [s, e] = await Promise.all([db.series.get(seriesId), db.episodes.get(episodeId)]);
     if (!s || !e) return;
-    useApp.getState().play(await playEpisodeRequest(s, e, startAt));
+    const r = await playEpisodeRequest(s, e, startAt);
+    if (ok()) useApp.getState().play(r);
   }));
 }
 
@@ -98,15 +118,17 @@ export async function playReplay(item: ReplayItem, startAt?: number) {
   if (item.provider === 'youtube') return openReplay(item);
   const st = useApp.getState();
   const lang = st.profile?.lang || 'fr';
-  replayAgeGate(item, () => void launching(async () => {
+  replayAgeGate(item, () => void launching(async (ok) => {
     try {
       let pos = startAt;
       if (pos === undefined && st.profile) {
         const w = await getProgress(st.profile.id, `replay:${item.id}`);
         if (w && !w.completed && w.positionSec > 30) pos = w.positionSec;
       }
-      useApp.getState().play(await replayPlayRequest(item, lang, pos));
+      const r = await replayPlayRequest(item, lang, pos);
+      if (ok()) useApp.getState().play(r);
     } catch (e) {
+      if (!ok()) return;
       const m = String((e as Error)?.message || '');
       st.toast(t(m === 'drm' ? 'replay.drm' : m === 'geo' || /HTTP 4/.test(m) ? 'replay.geo' : 'replay.unavailable'));
     }
@@ -115,11 +137,12 @@ export async function playReplay(item: ReplayItem, startAt?: number) {
 
 export async function playOfficial(o: OfficialLive) {
   const st = useApp.getState();
-  await launching(async () => {
+  await launching(async (ok) => {
     try {
-      st.play(await officialPlayRequest(o, st.profile?.lang || 'fr'));
+      const r = await officialPlayRequest(o, st.profile?.lang || 'fr');
+      if (ok()) st.play(r);
     } catch {
-      st.toast(t('replay.geo'));
+      if (ok()) st.toast(t('replay.geo'));
     }
   });
 }

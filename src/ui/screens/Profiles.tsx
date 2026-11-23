@@ -5,7 +5,7 @@ import { t, setLang } from '@/core/i18n';
 import type { Profile } from '@/core/types';
 import { COLORS, EMOJIS, deleteProfile, updateProfile } from '@/core/profiles';
 import { useApp, applyTheme } from '@/state/store';
-import { selectProfile } from '@/app/services';
+import { runSync, selectProfile } from '@/app/services';
 import { COUNTRIES, LANGUAGES } from '@/core/util/lang';
 import { langPrefs, profileCountry, subMode } from '@/core/prefs';
 import { hasOsKey } from '@/core/subs/opensubtitles';
@@ -133,6 +133,8 @@ export function ProfileEdit({ profileId }: { profileId?: string }) {
       useApp.getState().patchProfile(x);
       if (x.audioLangs || x.subLangs || x.country) useApp.getState().bumpCatalog();
       if (x.lang) setLang(x.lang);
+      // the catalogue only holds the audio languages: download again what changed
+      if ((x.audioLangs && !p.catalogAllLangs) || x.catalogAllLangs !== undefined) void runSync(p.id, false, { quiet: true });
       if (x.theme || x.accent !== undefined) applyTheme(x.theme || current.theme, x.accent ?? current.accent, useApp.getState().settings.performance);
     }
   };
@@ -166,6 +168,12 @@ export function ProfileEdit({ profileId }: { profileId?: string }) {
           onChange={(v) => void patch({ audioLangs: v })}
         />
         <span className="small dim">{t('profiles.langHelp')}</span>
+        <Toggle
+          label={t('profiles.allLangs')}
+          sub={t('profiles.allLangsHint')}
+          on={!!p.catalogAllLangs}
+          onChange={(v) => void patch({ catalogAllLangs: v })}
+        />
 
         <h2>{t('profiles.subtitles')}</h2>
         <LangPair value={langPrefs(p).subs} onChange={(v) => void patch({ subLangs: v })} />

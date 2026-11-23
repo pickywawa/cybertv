@@ -24,6 +24,8 @@ export interface Profile {
   country?: string;
   /** preferred audio languages (ISO 639-1): [primary, secondary?] */
   audioLangs?: string[];
+  /** download every category, not only those in the audio languages (default: only them) */
+  catalogAllLangs?: boolean;
   /** preferred subtitle languages: [primary, secondary?] */
   subLangs?: string[];
   /** when to show subtitles: never, only when the audio isn't a preferred language, always */
@@ -272,7 +274,7 @@ export interface TmdbListItem {
 
 export interface SyncProgress {
   sourceId?: string;
-  step: 'start' | 'live' | 'vod' | 'series' | 'epg' | 'enrich' | 'done' | 'error';
+  step: 'start' | 'live' | 'vod' | 'series' | 'logos' | 'epg' | 'enrich' | 'done' | 'error';
   message?: string;
   count?: number;
   /** items saved so far out of the list size (live progress while a big list is written) */

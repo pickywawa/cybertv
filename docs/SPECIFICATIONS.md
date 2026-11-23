@@ -599,6 +599,19 @@ Hypothèse : 1 dev + assistance IA. Chaque phase est **testable dans le navigate
   - l'écran affiche « 12 400 / 104 000 » avec une barre, une estimation du temps restant (vitesse de l'étape en cours), le temps écoulé, « téléchargement de la liste… » pendant le téléchargement, et le nombre de programmes du guide.
 - **Tenir sur un écran de TV** (environ 540 px de haut) : sur les écrans courts, la configuration est compactée (bloc plus large, emojis sur une ligne, espacements réduits, titre d'accueil masqué, QR code et instructions côte à côte). Vérifié à 960×540 : ni l'étape profil, ni le QR code, ni le téléchargement ne défilent.
 
+### V1.14 — Catalogue dans mes langues, première synchro bloquante (v0.15.0)
+
+- **Téléchargement limité aux langues audio du profil** (par défaut) :
+  - Xtream : les catégories sont lues d'abord ; seules celles dans les langues audio du profil (ou multi-langues / sans langue reconnaissable) sont gardées (`categoryLangs` / `keepCategory` : préfixes « FR: », balises « [EN] », écritures arabe/cyrillique…, noms de pays) ;
+  - les chaînes, films et séries sont alors demandés catégorie par catégorie (`category_id`, 4 en parallèle) ; au-delà de 40 catégories gardées, ou si le panneau ignore le paramètre, la liste complète est téléchargée puis filtrée ;
+  - M3U : les groupes dans d'autres langues sont ignorés à la lecture ; si rien ne reste, toute la playlist est gardée ;
+  - les éléments des catégories écartées sont supprimés explicitement (le garde-fou « plus de 70 % de suppressions » ne s'applique qu'aux réponses cassées) ; si aucune catégorie n'est gardée, tout est téléchargé ;
+  - profil › « Télécharger toutes les langues » (`catalogAllLangs`) ; changer de langues audio ou de réglage relance une synchro.
+- **Première synchro bloquante** : l'écran de téléchargement ne propose plus de commencer avant la fin ; l'app s'ouvre seule quand tout est enregistré. En cas d'erreur : « Commencer » ou « Réessayer ».
+- **Logos et classement des chaînes** (base iptv-org) : téléchargés pendant celui des sources, appliqués juste après, étape affichée ; nouvel essai en fin de synchro si le téléchargement parallèle a échoué. Les logos fournisseur (ex. CANAL+ sur TF1) ne restent plus après la première synchro.
+- **Plus de retéléchargement après la configuration** : le profil est relu en base à l'ouverture (il avait la date de synchro d'avant), et une synchro complète marque les migrations ponctuelles comme faites.
+- **Lancement abandonné** : Retour pendant le chargement annule la lecture demandée ; après 25 s, message « La lecture ne démarre pas » ; une réponse tardive n'ouvre plus le lecteur au milieu d'un autre écran.
+
 ### Reste à faire / à vérifier
 - Test sur une vraie box Android TV (aucune image système TV installée sur ce Mac) et mesure des objectifs du §3.4.
 - Vérifier le décodage AC3/E-AC3 via FFmpeg sur un vrai flux IPTV.

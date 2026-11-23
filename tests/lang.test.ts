@@ -67,3 +67,31 @@ describe('channel ranking', () => {
     expect(rankChannels(list, { country: 'FR', prefs: { audio: ['fr'], subs: [] } })[0].name).toBe('W9');
   });
 });
+
+import { categoryLangs, keepCategory } from '../src/core/util/lang';
+describe('categories by language', () => {
+  it('reads the language of provider categories', () => {
+    expect(categoryLangs('COMEDIE [FR]')).toEqual(['fr']);
+    expect(categoryLangs('KOMEDIE [NL]')).toEqual(['nl']);
+    expect(categoryLangs('[FR] TNT HD')).toEqual(['fr']);
+    expect(categoryLangs('FR: Sport')).toEqual(['fr']);
+    expect(categoryLangs('أفلام عربية')).toEqual(['ar']);
+    expect(categoryLangs('ALBANIA [AL]')).toEqual(['sq']);
+    expect(categoryLangs('FILMOVI [EXYU]')).toEqual(['sr']);
+    expect(categoryLangs('GERMANY 2024-2026 [DE]')).toEqual(['de']);
+    expect(categoryLangs('NETFLIX [MULTISUB]')).toEqual(['multi']);
+    expect(categoryLangs('TOP 500 IMDB')).toEqual([]);
+    expect(categoryLangs('PUNJABI')).toEqual(['x-punjabi']);
+  });
+  it('keeps my languages, multi-language and untagged categories', () => {
+    const fr = ['fr'];
+    expect(keepCategory('DRAME [FR]', fr)).toBe(true);
+    expect(keepCategory('TOP 500 IMDB', fr)).toBe(true);
+    expect(keepCategory('NETFLIX [MULTISUB]', fr)).toBe(true);
+    expect(keepCategory('NETFLIX [NL]', fr)).toBe(false);
+    expect(keepCategory('أفلام تركية', fr)).toBe(false);
+    expect(keepCategory('POLSKIE FILMY [PL]', fr)).toBe(false);
+    expect(keepCategory('PUNJABI', fr)).toBe(false);
+    expect(keepCategory('NETFLIX [NL]', ['fr', 'nl'])).toBe(true);
+  });
+});

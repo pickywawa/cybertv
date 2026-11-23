@@ -57,11 +57,11 @@ export class XtreamClient {
   }
 
   liveCategories() { return fetchJson<any[]>(this.api('get_live_categories')); }
-  liveStreams() { return fetchJson<any[]>(this.api('get_live_streams'), 120000); }
+  liveStreams(categoryId?: string) { return fetchJson<any[]>(this.api('get_live_streams', categoryId ? { category_id: categoryId } : {}), 120000); }
   vodCategories() { return fetchJson<any[]>(this.api('get_vod_categories')); }
-  vodStreams() { return fetchJson<any[]>(this.api('get_vod_streams'), 180000); }
+  vodStreams(categoryId?: string) { return fetchJson<any[]>(this.api('get_vod_streams', categoryId ? { category_id: categoryId } : {}), 180000); }
   seriesCategories() { return fetchJson<any[]>(this.api('get_series_categories')); }
-  series() { return fetchJson<any[]>(this.api('get_series'), 180000); }
+  series(categoryId?: string) { return fetchJson<any[]>(this.api('get_series', categoryId ? { category_id: categoryId } : {}), 180000); }
   vodInfo(id: string) { return fetchJson<any>(this.api('get_vod_info', { vod_id: id })); }
   seriesInfo(id: string) { return fetchJson<any>(this.api('get_series_info', { series_id: id })); }
   shortEpg(streamId: string, limit = 10) {

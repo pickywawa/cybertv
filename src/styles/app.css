@@ -144,6 +144,14 @@ html.native-video .app-shell { visibility: hidden; }
 .player .ui .pbtn:focus-visible, .kbd .player .ui .pbtn:focus,
 .player .ui .tbtn:focus-visible, .kbd .player .ui .tbtn:focus { background: var(--accent); color: var(--accent-text); }
 .player .ui .live-badge:focus-visible, .kbd .player .ui .live-badge:focus { background: var(--accent); color: var(--accent-text); }
+/* remote: the focused button breathes (grows and shrinks) so it's easy to spot from the couch */
+@keyframes focus-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+.kbd :is(.btn, .pbtn, .tbtn, .icon-btn, .navlink, .tab, .chip, .btn-guide, .season-btn, .live-badge, .mtop-btn)[data-f]:focus {
+  animation: focus-breathe 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kbd :is(.btn, .pbtn, .tbtn, .icon-btn, .navlink, .tab, .chip, .btn-guide, .season-btn, .live-badge, .mtop-btn)[data-f]:focus { animation: none; }
+}
 .perf [data-f] { transition: none; }
 .perf .card[data-f]:focus-visible, .perf.kbd .card[data-f]:focus { transform: none; }
 @media (hover: hover) {
